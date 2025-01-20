@@ -1,6 +1,25 @@
 use anyhow::{Context, Result};
+use clap::{Parser, Subcommand};
 use std::env;
 use std::fs;
+
+#[derive(Parser)]
+/// A toy implementation of a small subset of git
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Create an empty Git repository
+    Init {
+        /// Directory where the repository should be created
+        #[arg(default_value_t = String::from("."))]
+        directory: String,
+    },
+}
+use Commands::*;
 
 fn mkdir(path: &str) -> Result<()> {
     fs::create_dir(path).with_context(|| format!("Could not create directory `{}`", path))
@@ -27,21 +46,15 @@ fn git_init(path: &str) -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let args: Vec<String> = env::args().collect();
-    if args[1] == "init" {
-        let path = if args.len() == 3 {
-            args[2].to_owned()
-        } else {
-            ".".to_string()
-        };
-        git_init(&path)?;
-        let canon = fs::canonicalize(path)?;
-        println!(
-            "Initialized empty Git repository in {}/.git/",
-            canon.display()
-        );
-    } else {
-        println!("Unknown command: {}", args[1]);
+    let args = Cli::parse();
+    match args.command {
+        Init { directory } => {
+            git_init(&directory)?;
+            println!(
+                "Initialized empty Git repository in {}/.git/",
+                fs::canonicalize(directory)?.display()
+            );
+        }
     }
 
     Ok(())
