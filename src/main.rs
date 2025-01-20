@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use std::env;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 /// A toy implementation of a small subset of git
@@ -15,33 +15,32 @@ enum Commands {
     /// Create an empty Git repository
     Init {
         /// Directory where the repository should be created
-        #[arg(default_value_t = String::from("."))]
-        directory: String,
+        #[arg(default_value = ".")]
+        directory: PathBuf,
     },
 }
 use Commands::*;
 
-fn mkdir(path: &str) -> Result<()> {
-    fs::create_dir(path).with_context(|| format!("Could not create directory `{}`", path))
+fn mkdir(path: &Path) -> Result<()> {
+    fs::create_dir(path).with_context(|| format!("Could not create directory `{}`", path.display()))
 }
 
-fn mkdir_p(path: &str) -> Result<()> {
-    fs::create_dir_all(path).with_context(|| format!("Could not create directory `{}`", path))
+fn mkdir_p(path: &Path) -> Result<()> {
+    fs::create_dir_all(path)
+        .with_context(|| format!("Could not create directory `{}`", path.display()))
 }
 
-fn write_file(path: &str, content: &[u8]) -> Result<()> {
-    fs::write(path, content).with_context(|| format!("Could not write to file `{}`", path))
+fn write_file(path: &Path, content: &[u8]) -> Result<()> {
+    fs::write(path, content)
+        .with_context(|| format!("Could not write to file `{}`", path.display()))
 }
 
-fn git_init(path: &str) -> Result<()> {
+fn git_init(path: &Path) -> Result<()> {
     mkdir_p(path)?;
-    let cwd = env::current_dir()?;
-    env::set_current_dir(path)?;
-    mkdir(".git")?;
-    mkdir(".git/objects")?;
-    mkdir(".git/refs")?;
-    write_file(".git/HEAD", b"ref: refs/heads/main\n")?;
-    env::set_current_dir(cwd)?;
+    mkdir(&path.join(".git"))?;
+    mkdir(&path.join(".git/objects"))?;
+    mkdir(&path.join(".git/refs"))?;
+    write_file(&path.join(".git/HEAD"), b"ref: refs/heads/main\n")?;
     Ok(())
 }
 

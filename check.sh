@@ -46,3 +46,11 @@ rm -rf foo
 git init foo/bar > ref
 diff mine ref
 cleanup
+
+setup "git init <non-utf8-path>"
+NAME=$(printf "abc\x80def")
+"$TARGET" init "$NAME" >/dev/null
+assert_init "$NAME"
+# Don't compare with git: it just skips the rogue byte while
+# my program prints abc�def instead, which I like better.
+cleanup
