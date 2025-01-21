@@ -21,6 +21,12 @@ setup() {
 trap cleanup EXIT
 cleanup
 
+diff_cmd() {
+    git "$@" > ref
+    "$TARGET" "$@" > mine
+    diff -a mine ref
+}
+
 assert_init() {
     (
         cd "$1"
@@ -53,4 +59,11 @@ NAME=$(printf "abc\x80def")
 assert_init "$NAME"
 # Don't compare with git: it just skips the rogue byte while
 # my program prints abc�def instead, which I like better.
+cleanup
+
+setup "git cat-file -p <blob>"
+SMALLFILE="$ROOT/Cargo.toml"
+"$TARGET" init >/dev/null
+BLOB=$(git hash-object -w "$SMALLFILE")
+diff_cmd cat-file -p "$BLOB"
 cleanup

@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use flate2::read::ZlibDecoder;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -17,6 +19,12 @@ enum Commands {
         /// Directory where the repository should be created
         #[arg(default_value = ".")]
         directory: PathBuf,
+    },
+    /// Provide contents of repository objects
+    CatFile {
+        /// Pretty-print the contents of OBJECT based on its type
+        #[arg(short = 'p')]
+        object: String,
     },
 }
 use Commands::*;
@@ -44,6 +52,20 @@ fn git_init(path: &Path) -> Result<()> {
     Ok(())
 }
 
+fn cat_file_p(object: &str) -> Result<()> {
+    let path = &Path::new(".git/objects")
+        .join(&object[0..2])
+        .join(&object[2..]);
+    let compressed = fs::read(path)?;
+    let mut z = ZlibDecoder::new(&compressed[..]);
+    let mut raw = Vec::<u8>::new();
+    z.read_to_end(&mut raw)?;
+    let i = raw.iter().position(|&b| b == 0).unwrap(); // TODO
+    let s = std::str::from_utf8(&raw[i + 1..])?;
+    print!("{}", s);
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args = Cli::parse();
     match args.command {
@@ -53,6 +75,9 @@ fn main() -> Result<()> {
                 "Initialized empty Git repository in {}/.git/",
                 fs::canonicalize(directory)?.display()
             );
+        }
+        CatFile { object } => {
+            cat_file_p(&object)?;
         }
     }
 
