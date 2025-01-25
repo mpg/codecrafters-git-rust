@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use clap::{Parser, Subcommand};
 use flate2::read::ZlibDecoder;
 use std::fs;
@@ -53,15 +53,22 @@ fn git_init(path: &Path) -> Result<()> {
 }
 
 fn cat_file_p(object: &str) -> Result<()> {
+    ensure!(object.len() >= 4, "not a valid object name {}", object);
     let path = &Path::new(".git/objects")
         .join(&object[0..2])
         .join(&object[2..]);
-    let compressed = fs::read(path)?;
+    let compressed =
+        fs::read(path).with_context(|| format!("not a valid object name {}", object))?;
     let mut z = ZlibDecoder::new(&compressed[..]);
     let mut raw = Vec::<u8>::new();
-    z.read_to_end(&mut raw)?;
-    let i = raw.iter().position(|&b| b == 0).unwrap(); // TODO
-    let s = std::str::from_utf8(&raw[i + 1..])?;
+    z.read_to_end(&mut raw)
+        .with_context(|| format!("could not decompress {}", object))?;
+    let i = raw.iter().position(|&b| b == 0).ok_or(anyhow!(
+        "invalid object format: missing nul byte: {}",
+        object
+    ))?;
+    let s = std::str::from_utf8(&raw[i + 1..])
+        .with_context(|| format!("could not print non-utf8 content in {}", object))?;
     print!("{}", s);
     Ok(())
 }
