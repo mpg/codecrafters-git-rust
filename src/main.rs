@@ -1,8 +1,8 @@
 use anyhow::{anyhow, ensure, Context, Result};
 use clap::{Parser, Subcommand};
-use flate2::read::ZlibDecoder;
+use flate2::bufread::ZlibDecoder;
 use std::fs;
-use std::io::Read;
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -57,9 +57,10 @@ fn cat_file_p(object: &str) -> Result<()> {
     let path = &Path::new(".git/objects")
         .join(&object[0..2])
         .join(&object[2..]);
-    let compressed =
-        fs::read(path).with_context(|| format!("not a valid object name {}", object))?;
-    let mut z = ZlibDecoder::new(&compressed[..]);
+    let file =
+        fs::File::open(path).with_context(|| format!("not a valid object name {}", object))?;
+    let bufreader = BufReader::new(file);
+    let mut z = ZlibDecoder::new(bufreader);
     let mut raw = Vec::<u8>::new();
     z.read_to_end(&mut raw)
         .with_context(|| format!("could not decompress {}", object))?;
