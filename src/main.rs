@@ -2,7 +2,7 @@ use anyhow::{anyhow, ensure, Context, Result};
 use clap::{Parser, Subcommand};
 use flate2::bufread::ZlibDecoder;
 use std::fs;
-use std::io::{BufReader, Read};
+use std::io::{stdout, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -68,9 +68,8 @@ fn cat_file_p(object: &str) -> Result<()> {
         "invalid object format: missing nul byte: {}",
         object
     ))?;
-    let s = std::str::from_utf8(&raw[i + 1..])
-        .with_context(|| format!("could not print non-utf8 content in {}", object))?;
-    print!("{}", s);
+    let content = &raw[i + 1..];
+    stdout().write_all(content)?;
     Ok(())
 }
 

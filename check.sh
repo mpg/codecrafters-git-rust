@@ -67,3 +67,10 @@ SMALLFILE="$ROOT/Cargo.toml"
 BLOB=$(git hash-object -w "$SMALLFILE")
 diff_cmd cat-file -p "$BLOB"
 cleanup
+
+setup "git cat-file -p <blob-with-non-utf8-content>"
+printf "abc\x80def" > somefile
+"$TARGET" init >/dev/null
+BLOB=$(git hash-object -w somefile)
+diff_cmd cat-file -p "$BLOB"
+cleanup
