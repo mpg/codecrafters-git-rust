@@ -52,6 +52,21 @@ fn git_init(path: &Path) -> Result<()> {
     Ok(())
 }
 
+// Read from stream until the given delimiter is found.
+// Return content excluding the delimiter.
+fn read_up_to(s: &mut impl Read, delim: u8) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    loop {
+        let mut buf = [0];
+        s.read_exact(&mut buf)
+            .with_context(|| format!("looking for {:?}", delim))?;
+        if buf[0] == delim {
+            return Ok(out);
+        }
+        out.push(buf[0]);
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum ObjType {
     Commit,
@@ -62,16 +77,10 @@ enum ObjType {
 
 impl ObjType {
     // Loose objects, once uncompressed, start with either
-    // "commit ", "tree ", "blob " or "tag ".
+    // "commit", "tree", "blob" or "tag", followed by a " ".
     fn from_stream(s: &mut impl Read) -> Result<ObjType> {
-        let mut label = vec![];
-        while label.last() != Some(&b' ') {
-            let mut buf = [0];
-            s.read_exact(&mut buf)?;
-            label.push(buf[0]);
-        }
-
-        match &label[..label.len() - 1] {
+        let label = read_up_to(s, b' ')?;
+        match label.as_slice() {
             b"commit" => Ok(ObjType::Commit),
             b"tree" => Ok(ObjType::Tree),
             b"blob" => Ok(ObjType::Blob),
