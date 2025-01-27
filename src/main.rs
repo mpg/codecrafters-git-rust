@@ -52,6 +52,35 @@ fn git_init(path: &Path) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ObjType {
+    Commit,
+    Tree,
+    Blob,
+    Tag,
+}
+
+impl ObjType {
+    // Loose objects, once uncompressed, start with either
+    // "commit ", "tree ", "blob " or "tag ".
+    fn from_stream(s: &mut impl Read) -> Result<ObjType> {
+        let mut label = vec![];
+        while label.last() != Some(&b' ') {
+            let mut buf = [0];
+            s.read_exact(&mut buf)?;
+            label.push(buf[0]);
+        }
+
+        match &label[..label.len() - 1] {
+            b"commit" => Ok(ObjType::Commit),
+            b"tree" => Ok(ObjType::Tree),
+            b"blob" => Ok(ObjType::Blob),
+            b"tag" => Ok(ObjType::Tag),
+            l => Err(anyhow!("unknown object type {:?}", l)),
+        }
+    }
+}
+
 fn cat_file_p(object: &str) -> Result<()> {
     ensure!(object.len() >= 4, "not a valid object name {}", object);
     let path = &Path::new(".git/objects")
@@ -60,9 +89,15 @@ fn cat_file_p(object: &str) -> Result<()> {
     let file =
         fs::File::open(path).with_context(|| format!("not a valid object name {}", object))?;
     let bufreader = BufReader::new(file);
-    let mut z = ZlibDecoder::new(bufreader);
+    let mut zdec = ZlibDecoder::new(bufreader);
+    let obj_type = ObjType::from_stream(&mut zdec)
+        .with_context(|| format!("could not get type of object {}", object))?;
+    ensure!(
+        obj_type == ObjType::Blob,
+        "cat-file -p only implemented for blobs"
+    );
     let mut raw = Vec::<u8>::new();
-    z.read_to_end(&mut raw)
+    zdec.read_to_end(&mut raw)
         .with_context(|| format!("could not decompress {}", object))?;
     let i = raw.iter().position(|&b| b == 0).ok_or(anyhow!(
         "invalid object format: missing nul byte: {}",
