@@ -90,8 +90,16 @@ impl ObjType {
     }
 }
 
+// Read the size field of a loose object: ascii digits terminated by '\0'.
+fn read_obj_size(s: &mut impl Read) -> Result<usize> {
+    let digits = read_up_to(s, b'\0')?;
+    let size: usize = std::str::from_utf8(&digits)?.parse()?;
+    Ok(size)
+}
+
 fn cat_file_p(object: &str) -> Result<()> {
     ensure!(object.len() >= 4, "not a valid object name {}", object);
+
     let path = &Path::new(".git/objects")
         .join(&object[0..2])
         .join(&object[2..]);
@@ -99,21 +107,27 @@ fn cat_file_p(object: &str) -> Result<()> {
         fs::File::open(path).with_context(|| format!("not a valid object name {}", object))?;
     let bufreader = BufReader::new(file);
     let mut zdec = ZlibDecoder::new(bufreader);
+
     let obj_type = ObjType::from_stream(&mut zdec)
-        .with_context(|| format!("could not get type of object {}", object))?;
+        .with_context(|| format!("could not read type of object {}", object))?;
     ensure!(
         obj_type == ObjType::Blob,
         "cat-file -p only implemented for blobs"
     );
-    let mut raw = Vec::<u8>::new();
-    zdec.read_to_end(&mut raw)
-        .with_context(|| format!("could not decompress {}", object))?;
-    let i = raw.iter().position(|&b| b == 0).ok_or(anyhow!(
-        "invalid object format: missing nul byte: {}",
-        object
-    ))?;
-    let content = &raw[i + 1..];
-    stdout().write_all(content)?;
+
+    let size = read_obj_size(&mut zdec)
+        .with_context(|| format!("could not read size of object {}", object))?;
+
+    let mut content = Vec::<u8>::new();
+    zdec.read_to_end(&mut content)
+        .with_context(|| format!("could not read content of object {}", object))?;
+
+    ensure!(
+        size == content.len(),
+        format!("size mismatch for object {}", object)
+    );
+
+    stdout().write_all(&content)?;
     Ok(())
 }
 
