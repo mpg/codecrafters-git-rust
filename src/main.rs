@@ -1,8 +1,9 @@
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use clap::{Parser, Subcommand};
 use flate2::bufread::ZlibDecoder;
 use std::fs;
-use std::io::{stdout, BufReader, Read, Write};
+use std::io;
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
@@ -97,37 +98,45 @@ fn read_obj_size(s: &mut impl Read) -> Result<usize> {
     Ok(size)
 }
 
-fn cat_file_p(object: &str) -> Result<()> {
-    ensure!(object.len() >= 4, "not a valid object name {}", object);
+struct Object {
+    obj_type: ObjType,
+    content: Vec<u8>,
+}
 
-    let path = &Path::new(".git/objects")
-        .join(&object[0..2])
-        .join(&object[2..]);
-    let file =
-        fs::File::open(path).with_context(|| format!("not a valid object name {}", object))?;
-    let bufreader = BufReader::new(file);
-    let mut zdec = ZlibDecoder::new(bufreader);
+impl Object {
+    fn from_hash(hash: &str) -> Result<Object> {
+        ensure!(hash.len() >= 4, "not a valid object name {}", hash);
 
-    let obj_type = ObjType::from_stream(&mut zdec)
-        .with_context(|| format!("could not read type of object {}", object))?;
-    ensure!(
-        obj_type == ObjType::Blob,
-        "cat-file -p only implemented for blobs"
-    );
+        let obj_path = &Path::new(".git/objects").join(&hash[0..2]).join(&hash[2..]);
+        let file = fs::File::open(obj_path)
+            .with_context(|| format!("not a valid object name {}", hash))?;
+        let bufreader = io::BufReader::new(file);
+        let mut zdec = ZlibDecoder::new(bufreader);
 
-    let size = read_obj_size(&mut zdec)
-        .with_context(|| format!("could not read size of object {}", object))?;
+        let obj_type = ObjType::from_stream(&mut zdec)
+            .with_context(|| format!("could not read type of object {}", hash))?;
+        let size = read_obj_size(&mut zdec)
+            .with_context(|| format!("could not read size of object {}", hash))?;
 
-    let mut content = Vec::<u8>::new();
-    zdec.read_to_end(&mut content)
-        .with_context(|| format!("could not read content of object {}", object))?;
+        let mut content = Vec::<u8>::new();
+        zdec.read_to_end(&mut content)
+            .with_context(|| format!("could not read content of object {}", hash))?;
 
-    ensure!(
-        size == content.len(),
-        format!("size mismatch for object {}", object)
-    );
+        ensure!(
+            size == content.len(),
+            format!("size mismatch for object {}", hash)
+        );
 
-    stdout().write_all(&content)?;
+        Ok(Object { obj_type, content })
+    }
+}
+
+fn cat_file_p(hash: &str) -> Result<()> {
+    let object = Object::from_hash(hash)?;
+    match object.obj_type {
+        ObjType::Blob => io::stdout().write_all(&object.content)?,
+        _ => bail!("cat-file -p only implemented for blobs"),
+    }
     Ok(())
 }
 
