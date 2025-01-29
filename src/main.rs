@@ -98,6 +98,16 @@ fn read_obj_size(s: &mut impl Read) -> Result<usize> {
     Ok(size)
 }
 
+fn git_dir() -> Result<PathBuf> {
+    let cwd = std::env::current_dir()?;
+    for dir in cwd.ancestors() {
+        if dir.join(".git").is_dir() {
+            return Ok(dir.join(".git"));
+        }
+    }
+    bail!("not a git repository (or any of the parent directories): .git");
+}
+
 struct Object {
     obj_type: ObjType,
     content: Vec<u8>,
@@ -106,8 +116,11 @@ struct Object {
 impl Object {
     fn from_hash(hash: &str) -> Result<Object> {
         ensure!(hash.len() >= 4, "not a valid object name {}", hash);
+        let obj_path = git_dir()?
+            .join("objects")
+            .join(&hash[0..2])
+            .join(&hash[2..]);
 
-        let obj_path = &Path::new(".git/objects").join(&hash[0..2]).join(&hash[2..]);
         let file = fs::File::open(obj_path)
             .with_context(|| format!("not a valid object name {}", hash))?;
         let bufreader = io::BufReader::new(file);

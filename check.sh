@@ -74,3 +74,12 @@ printf "abc\x80def" > somefile
 BLOB=$(git hash-object -w somefile)
 diff_cmd cat-file -p "$BLOB"
 cleanup
+
+setup "git cat-file -p <blob> (from sub-directory)"
+SMALLFILE="$ROOT/Cargo.toml"
+"$TARGET" init >/dev/null
+BLOB=$(git hash-object -w "$SMALLFILE")
+mkdir -p foo/bar
+cd foo/bar
+diff_cmd cat-file -p "$BLOB"
+cleanup
