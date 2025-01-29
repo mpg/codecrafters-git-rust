@@ -5,6 +5,7 @@ use std::fs;
 use std::io;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 #[derive(Parser)]
 /// A toy implementation of a small subset of git
@@ -98,7 +99,7 @@ fn read_obj_size(s: &mut impl Read) -> Result<usize> {
     Ok(size)
 }
 
-fn git_dir() -> Result<PathBuf> {
+static GIT_DIR: LazyLock<Result<PathBuf>> = LazyLock::new(|| {
     let cwd = std::env::current_dir()?;
     for dir in cwd.ancestors() {
         if dir.join(".git").is_dir() {
@@ -106,6 +107,10 @@ fn git_dir() -> Result<PathBuf> {
         }
     }
     bail!("not a git repository (or any of the parent directories): .git");
+});
+
+fn git_dir() -> Result<&'static PathBuf> {
+    GIT_DIR.as_ref().map_err(|e| anyhow!(e.to_string()))
 }
 
 struct Object {
