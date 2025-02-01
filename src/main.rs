@@ -7,30 +7,6 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-#[derive(Parser)]
-/// A toy implementation of a small subset of git
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Create an empty Git repository
-    Init {
-        /// Directory where the repository should be created
-        #[arg(default_value = ".")]
-        directory: PathBuf,
-    },
-    /// Provide contents of repository objects
-    CatFile {
-        /// Pretty-print the contents of OBJECT based on its type
-        #[arg(short = 'p')]
-        object: String,
-    },
-}
-use Commands::*;
-
 fn mkdir(path: &Path) -> Result<()> {
     fs::create_dir(path).with_context(|| format!("Could not create directory `{}`", path.display()))
 }
@@ -157,6 +133,30 @@ fn cat_file_p(hash: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[derive(Parser)]
+/// A toy implementation of a small subset of git
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Create an empty Git repository
+    Init {
+        /// Directory where the repository should be created
+        #[arg(default_value = ".")]
+        directory: PathBuf,
+    },
+    /// Provide contents of repository objects
+    CatFile {
+        /// Pretty-print the contents of OBJECT based on its type
+        #[arg(short = 'p')]
+        object: String,
+    },
+}
+use Commands::*;
 
 fn main() -> Result<()> {
     let args = Cli::parse();
