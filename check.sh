@@ -89,3 +89,10 @@ SMALLFILE="$ROOT/Cargo.toml"
 "$TARGET" init >/dev/null
 diff_cmd hash-object "$SMALLFILE"
 cleanup
+
+setup "git hash-object -w <file>"
+SMALLFILE="$ROOT/Cargo.toml"
+"$TARGET" init >/dev/null
+BLOB=$("$TARGET" hash-object -w "$SMALLFILE")
+diff "$SMALLFILE" <(git cat-file -p "$BLOB")
+cleanup

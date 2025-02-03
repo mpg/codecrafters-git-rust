@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use clap::{Parser, Subcommand};
-use flate2::bufread::ZlibDecoder;
+use flate2::{bufread::ZlibDecoder, write::ZlibEncoder, Compression};
 use sha1::{Digest, Sha1};
 use std::fs;
 use std::io;
@@ -136,8 +136,6 @@ fn cat_file_p(hash: &str) -> Result<()> {
 }
 
 fn hash_object(file: &Path, write: bool) -> Result<()> {
-    ensure!(!write, "hash-object -w not implemented");
-
     let mut raw = Vec::new();
     raw.extend_from_slice(b"blob ");
 
@@ -153,6 +151,18 @@ fn hash_object(file: &Path, write: bool) -> Result<()> {
 
     let hash_bin = Sha1::digest(&raw);
     let hash_hex = hex::encode(hash_bin);
+
+    if write {
+        let obj_path = git_dir()?
+            .join("objects")
+            .join(&hash_hex[0..2])
+            .join(&hash_hex[2..]);
+        mkdir_p(obj_path.parent().unwrap())?;
+        let output = fs::File::create(&obj_path)
+            .with_context(|| format!("could not create {}", obj_path.display()))?;
+        let mut zenc = ZlibEncoder::new(output, Compression::default());
+        zenc.write_all(&raw)?;
+    }
 
     println!("{}", hash_hex);
     Ok(())
