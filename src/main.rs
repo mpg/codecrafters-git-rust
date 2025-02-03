@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use clap::{Parser, Subcommand};
 use flate2::bufread::ZlibDecoder;
+use sha1::{Digest, Sha1};
 use std::fs;
 use std::io;
 use std::io::prelude::*;
@@ -134,6 +135,29 @@ fn cat_file_p(hash: &str) -> Result<()> {
     Ok(())
 }
 
+fn hash_object(file: &Path, write: bool) -> Result<()> {
+    ensure!(!write, "hash-object -w not implemented");
+
+    let mut raw = Vec::new();
+    raw.extend_from_slice(b"blob ");
+
+    let mut source =
+        fs::File::open(file).with_context(|| format!("could not read {}", file.display()))?;
+    let len = source.metadata()?.len();
+    raw.extend_from_slice(len.to_string().as_bytes());
+    raw.push(0);
+
+    source
+        .read_to_end(&mut raw)
+        .with_context(|| format!("error reading {}", file.display()))?;
+
+    let hash_bin = Sha1::digest(&raw);
+    let hash_hex = hex::encode(hash_bin);
+
+    println!("{}", hash_hex);
+    Ok(())
+}
+
 #[derive(Parser)]
 /// A toy implementation of a small subset of git
 struct Cli {
@@ -155,6 +179,14 @@ enum Commands {
         #[arg(short = 'p')]
         object: String,
     },
+    /// Compute object hash and optionally create an object from a file
+    HashObject {
+        /// Actually write the object into the object database
+        #[arg(short)]
+        write: bool,
+        /// File to read
+        file: PathBuf,
+    },
 }
 use Commands::*;
 
@@ -170,6 +202,9 @@ fn main() -> Result<()> {
         }
         CatFile { object } => {
             cat_file_p(&object)?;
+        }
+        HashObject { write, file } => {
+            hash_object(&file, write)?;
         }
     }
 

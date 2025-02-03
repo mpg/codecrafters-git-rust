@@ -83,3 +83,9 @@ mkdir -p foo/bar
 cd foo/bar
 diff_cmd cat-file -p "$BLOB"
 cleanup
+
+setup "git hash-object <file>"
+SMALLFILE="$ROOT/Cargo.toml"
+"$TARGET" init >/dev/null
+diff_cmd hash-object "$SMALLFILE"
+cleanup
