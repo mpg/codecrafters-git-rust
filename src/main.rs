@@ -158,8 +158,13 @@ fn hash_object(file: &Path, write: bool) -> Result<()> {
             .join(&hash_hex[0..2])
             .join(&hash_hex[2..]);
         mkdir_p(obj_path.parent().unwrap())?;
+
         let output = fs::File::create(&obj_path)
             .with_context(|| format!("could not create {}", obj_path.display()))?;
+        let mut perms = output.metadata()?.permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(obj_path, perms)?;
+
         let mut zenc = ZlibEncoder::new(output, Compression::default());
         zenc.write_all(&raw)?;
     }
