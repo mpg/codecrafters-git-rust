@@ -90,6 +90,13 @@ fn git_dir() -> Result<&'static PathBuf> {
     GIT_DIR.as_ref().map_err(|e| anyhow!(e.to_string()))
 }
 
+fn path_from_hash(hash: &str) -> Result<PathBuf> {
+    Ok(git_dir()?
+        .join("objects")
+        .join(&hash[0..2])
+        .join(&hash[2..]))
+}
+
 struct Object {
     obj_type: ObjType,
     content: Vec<u8>,
@@ -98,10 +105,7 @@ struct Object {
 impl Object {
     fn from_hash(hash: &str) -> Result<Object> {
         ensure!(hash.len() >= 4, "not a valid object name {}", hash);
-        let obj_path = git_dir()?
-            .join("objects")
-            .join(&hash[0..2])
-            .join(&hash[2..]);
+        let obj_path = path_from_hash(hash)?;
 
         let file = fs::File::open(obj_path)
             .with_context(|| format!("not a valid object name {}", hash))?;
@@ -153,10 +157,7 @@ fn hash_object(file: &Path, write: bool) -> Result<()> {
     let hash_hex = hex::encode(hash_bin);
 
     if write {
-        let obj_path = git_dir()?
-            .join("objects")
-            .join(&hash_hex[0..2])
-            .join(&hash_hex[2..]);
+        let obj_path = path_from_hash(&hash_hex)?;
         mkdir_p(obj_path.parent().unwrap())?;
 
         let output = fs::File::create(&obj_path)
