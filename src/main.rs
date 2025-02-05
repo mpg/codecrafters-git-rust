@@ -184,7 +184,7 @@ fn hash_object(file: &Path, write: bool) -> Result<()> {
         .with_context(|| format!("error reading {}", file.display()))?;
 
     let hash_bin = Sha1::digest(&raw);
-    let hash_hex = hex::encode(hash_bin);
+    let hash_hex = format!("{:x}", hash_bin);
 
     if write {
         let obj_path = path_from_hash(&hash_hex)?;

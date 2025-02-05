@@ -7,9 +7,8 @@ rust-version = "1.80"
 
 [dependencies]
 anyhow = "1.0.68"                                # error handling
-bytes = "1.3.0"                                  # helps manage buffers
+#bytes = "1.3.0"                                  # helps manage buffers
 clap = { version = "4.5.26", features = ["derive"] }
 flate2 = "1.0.34"                                # compression
-hex = "0.4.3"
 sha1 = "0.10.6"
-thiserror = "1.0.38"                             # error handling
+#thiserror = "1.0.38"                             # error handling
