@@ -9,17 +9,17 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 fn mkdir(path: &Path) -> Result<()> {
-    fs::create_dir(path).with_context(|| format!("Could not create directory `{}`", path.display()))
+    fs::create_dir(path).with_context(|| format!("could not create directory `{}`", path.display()))
 }
 
 fn mkdir_p(path: &Path) -> Result<()> {
     fs::create_dir_all(path)
-        .with_context(|| format!("Could not create directory `{}`", path.display()))
+        .with_context(|| format!("could not create directory `{}`", path.display()))
 }
 
 fn write_file(path: &Path, content: &[u8]) -> Result<()> {
     fs::write(path, content)
-        .with_context(|| format!("Could not write to file `{}`", path.display()))
+        .with_context(|| format!("could not write to file `{}`", path.display()))
 }
 
 fn git_init(path: &Path) -> Result<()> {
@@ -172,7 +172,8 @@ impl Read for ObjReader {
 fn cat_file_p(hash: &str) -> Result<()> {
     let mut object = ObjReader::from_hash(hash)?;
     match object.obj_type {
-        ObjType::Blob => io::copy(&mut object, &mut io::stdout())?,
+        ObjType::Blob => io::copy(&mut object, &mut io::stdout())
+            .with_context(|| format!("reading object {hash} to stdout"))?,
         _ => bail!("cat-file -p only implemented for blobs"),
     };
     Ok(())
@@ -214,7 +215,7 @@ impl ObjWriter {
             size,
             seen: 0,
         };
-        write!(writer, "{} {}\0", obj_type.to_str(), size)?;
+        write!(writer, "{} {}\0", obj_type.to_str(), size).context("writing object header")?;
         writer.seen = 0;
         Ok(writer)
     }
@@ -274,8 +275,11 @@ fn hash_object(file: &Path, write: bool) -> Result<()> {
     let size = source.metadata()?.len() as usize;
 
     let mut object = ObjWriter::new(ObjType::Blob, size, write)?;
-    io::copy(&mut source, &mut object)?;
-    let hash_hex = object.finish()?;
+    io::copy(&mut source, &mut object)
+        .with_context(|| format!("copying from {} to object", file.display()))?;
+    let hash_hex = object
+        .finish()
+        .context("writing out object to final location")?;
 
     println!("{}", hash_hex);
     Ok(())
