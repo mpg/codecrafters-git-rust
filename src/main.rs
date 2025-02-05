@@ -33,6 +33,9 @@ fn git_init(path: &Path) -> Result<()> {
 
 // Read from stream until the given delimiter is found.
 // Return content excluding the delimiter.
+//
+// Somewhat similar to BufRead::read_until(), but we want to use it with
+// ZlibDecoder, which does not implement BufRead (though internally buffered).
 fn read_up_to(s: &mut impl Read, delim: u8) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     loop {
