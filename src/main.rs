@@ -70,6 +70,15 @@ impl ObjType {
             l => Err(anyhow!("unknown object type {:?}", l)),
         }
     }
+
+    fn to_str(&self) -> &'static str {
+        match self {
+            ObjType::Commit => "commit",
+            ObjType::Tree => "tree",
+            ObjType::Blob => "blob",
+            ObjType::Tag => "tag",
+        }
+    }
 }
 
 // Read the size field of a loose object: ascii digits terminated by '\0'.
@@ -169,36 +178,83 @@ fn cat_file_p(hash: &str) -> Result<()> {
     Ok(())
 }
 
-fn hash_object(file: &Path, write: bool) -> Result<()> {
-    let mut raw = Vec::new();
-    raw.extend_from_slice(b"blob ");
+struct ObjWriter {
+    hasher: Sha1,
+    zenc: Option<ZlibEncoder<fs::File>>,
+}
 
+impl ObjWriter {
+    fn tmp_path() -> Result<PathBuf> {
+        let tmp_name = format!("tmp{}", std::process::id());
+        Ok(git_dir()?.join(tmp_name))
+    }
+
+    fn new(obj_type: ObjType, size: usize, write: bool) -> Result<ObjWriter> {
+        let hasher = Sha1::new();
+        let zenc = if write {
+            // We don't know the name (hash) yet, so use a temporary file
+            let tmp_path = Self::tmp_path()?;
+            let file = fs::File::create(&tmp_path)
+                .with_context(|| format!("could not create {}", tmp_path.display()))?;
+
+            let mut perms = file.metadata()?.permissions();
+            perms.set_readonly(true);
+            fs::set_permissions(tmp_path, perms)?;
+
+            Some(ZlibEncoder::new(file, Compression::default()))
+        } else {
+            None
+        };
+
+        let mut writer = ObjWriter { hasher, zenc };
+        write!(writer, "{} {}\0", obj_type.to_str(), size)?;
+        Ok(writer)
+    }
+
+    fn finish(&mut self) -> Result<String> {
+        let hash_bin = self.hasher.finalize_reset();
+        let hash_hex = format!("{:x}", hash_bin);
+
+        if let Some(zenc) = &mut self.zenc {
+            zenc.flush()?;
+            let from = Self::tmp_path()?;
+            let to = path_from_hash(&hash_hex)?;
+            mkdir_p(to.parent().unwrap())?;
+            fs::rename(from, to)?;
+        }
+
+        Ok(hash_hex)
+    }
+}
+
+impl Write for ObjWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = if let Some(zenc) = &mut self.zenc {
+            zenc.write(buf)?
+        } else {
+            buf.len()
+        };
+
+        self.hasher.update(&buf[..n]);
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match &mut self.zenc {
+            Some(z) => z.flush(),
+            None => Ok(()),
+        }
+    }
+}
+
+fn hash_object(file: &Path, write: bool) -> Result<()> {
     let mut source =
         fs::File::open(file).with_context(|| format!("could not read {}", file.display()))?;
-    let len = source.metadata()?.len();
-    raw.extend_from_slice(len.to_string().as_bytes());
-    raw.push(0);
+    let size = source.metadata()?.len() as usize;
 
-    source
-        .read_to_end(&mut raw)
-        .with_context(|| format!("error reading {}", file.display()))?;
-
-    let hash_bin = Sha1::digest(&raw);
-    let hash_hex = format!("{:x}", hash_bin);
-
-    if write {
-        let obj_path = path_from_hash(&hash_hex)?;
-        mkdir_p(obj_path.parent().unwrap())?;
-
-        let output = fs::File::create(&obj_path)
-            .with_context(|| format!("could not create {}", obj_path.display()))?;
-        let mut perms = output.metadata()?.permissions();
-        perms.set_readonly(true);
-        fs::set_permissions(obj_path, perms)?;
-
-        let mut zenc = ZlibEncoder::new(output, Compression::default());
-        zenc.write_all(&raw)?;
-    }
+    let mut object = ObjWriter::new(ObjType::Blob, size, write)?;
+    io::copy(&mut source, &mut object)?;
+    let hash_hex = object.finish()?;
 
     println!("{}", hash_hex);
     Ok(())
