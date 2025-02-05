@@ -157,38 +157,12 @@ impl Read for ObjReader {
     }
 }
 
-struct Object {
-    obj_type: ObjType,
-    content: Vec<u8>,
-}
-
-impl Object {
-    fn from_hash(hash: &str) -> Result<Object> {
-        let mut object = ObjReader::from_hash(hash)?;
-
-        let mut content = Vec::<u8>::new();
-        object
-            .read_to_end(&mut content)
-            .with_context(|| format!("could not read content of object {}", hash))?;
-
-        ensure!(
-            object.size == content.len(),
-            format!("size mismatch for object {}", hash)
-        );
-
-        Ok(Object {
-            obj_type: object.obj_type,
-            content,
-        })
-    }
-}
-
 fn cat_file_p(hash: &str) -> Result<()> {
-    let object = Object::from_hash(hash)?;
+    let mut object = ObjReader::from_hash(hash)?;
     match object.obj_type {
-        ObjType::Blob => io::stdout().write_all(&object.content)?,
+        ObjType::Blob => io::copy(&mut object, &mut io::stdout())?,
         _ => bail!("cat-file -p only implemented for blobs"),
-    }
+    };
     Ok(())
 }
 
