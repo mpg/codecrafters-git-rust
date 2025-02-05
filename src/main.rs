@@ -97,13 +97,15 @@ fn path_from_hash(hash: &str) -> Result<PathBuf> {
         .join(&hash[2..]))
 }
 
-struct Object {
+struct ObjReader {
     obj_type: ObjType,
-    content: Vec<u8>,
+    size: usize,
+    used: usize,
+    zdec: ZlibDecoder<io::BufReader<fs::File>>,
 }
 
-impl Object {
-    fn from_hash(hash: &str) -> Result<Object> {
+impl ObjReader {
+    fn from_hash(hash: &str) -> Result<ObjReader> {
         ensure!(hash.len() >= 4, "not a valid object name {}", hash);
         let obj_path = path_from_hash(hash)?;
 
@@ -117,16 +119,67 @@ impl Object {
         let size = read_obj_size(&mut zdec)
             .with_context(|| format!("could not read size of object {}", hash))?;
 
+        Ok(ObjReader {
+            obj_type,
+            size,
+            used: 0,
+            zdec,
+        })
+    }
+}
+
+impl Read for ObjReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.zdec.read(buf) {
+            Ok(0) => {
+                if self.used == self.size {
+                    Ok(0)
+                } else {
+                    Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        format!("expected {} bytes, got only {}", self.size, self.used),
+                    ))
+                }
+            }
+            Ok(len) => {
+                self.used += len;
+                if self.used <= self.size {
+                    Ok(len)
+                } else {
+                    Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("size mismatch: expected {}, got {}+", self.size, self.used),
+                    ))
+                }
+            }
+            err => err,
+        }
+    }
+}
+
+struct Object {
+    obj_type: ObjType,
+    content: Vec<u8>,
+}
+
+impl Object {
+    fn from_hash(hash: &str) -> Result<Object> {
+        let mut object = ObjReader::from_hash(hash)?;
+
         let mut content = Vec::<u8>::new();
-        zdec.read_to_end(&mut content)
+        object
+            .read_to_end(&mut content)
             .with_context(|| format!("could not read content of object {}", hash))?;
 
         ensure!(
-            size == content.len(),
+            object.size == content.len(),
             format!("size mismatch for object {}", hash)
         );
 
-        Ok(Object { obj_type, content })
+        Ok(Object {
+            obj_type: object.obj_type,
+            content,
+        })
     }
 }
 
