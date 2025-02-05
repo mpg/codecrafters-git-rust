@@ -181,6 +181,8 @@ fn cat_file_p(hash: &str) -> Result<()> {
 struct ObjWriter {
     hasher: Sha1,
     zenc: Option<ZlibEncoder<fs::File>>,
+    size: usize,
+    seen: usize,
 }
 
 impl ObjWriter {
@@ -206,12 +208,22 @@ impl ObjWriter {
             None
         };
 
-        let mut writer = ObjWriter { hasher, zenc };
+        let mut writer = ObjWriter {
+            hasher,
+            zenc,
+            size,
+            seen: 0,
+        };
         write!(writer, "{} {}\0", obj_type.to_str(), size)?;
+        writer.seen = 0;
         Ok(writer)
     }
 
     fn finish(&mut self) -> Result<String> {
+        if self.seen != self.size {
+            bail!("size mismatch: expected {}, got {}", self.size, self.seen);
+        }
+
         let hash_bin = self.hasher.finalize_reset();
         let hash_hex = format!("{:x}", hash_bin);
 
@@ -236,7 +248,16 @@ impl Write for ObjWriter {
         };
 
         self.hasher.update(&buf[..n]);
-        Ok(n)
+        self.seen += n;
+
+        if self.seen > self.size {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("size mismatch: expected {}, got {}+", self.size, self.seen),
+            ))
+        } else {
+            Ok(n)
+        }
     }
 
     fn flush(&mut self) -> io::Result<()> {
