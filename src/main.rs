@@ -9,26 +9,16 @@ use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
-fn mkdir(path: &Path) -> Result<()> {
-    fs::create_dir(path).with_context(|| format!("could not create directory `{}`", path.display()))
-}
-
-fn mkdir_p(path: &Path) -> Result<()> {
-    fs::create_dir_all(path)
-        .with_context(|| format!("could not create directory `{}`", path.display()))
-}
-
-fn write_file(path: &Path, content: &[u8]) -> Result<()> {
-    fs::write(path, content)
-        .with_context(|| format!("could not write to file `{}`", path.display()))
-}
-
 fn git_init(path: &Path) -> Result<()> {
-    mkdir_p(path)?;
-    mkdir(&path.join(".git"))?;
-    mkdir(&path.join(".git/objects"))?;
-    mkdir(&path.join(".git/refs"))?;
-    write_file(&path.join(".git/HEAD"), b"ref: refs/heads/main\n")?;
+    let obj_dir = path.join(".git/objects");
+    fs::create_dir_all(&obj_dir).with_context(|| format!("creating {}", obj_dir.display()))?;
+    fs::create_dir(path.join(".git/refs")).context("creating .git/refs")?;
+    fs::write(path.join(".git/HEAD"), b"ref: refs/heads/main\n").context("creating .git/HEAD")?;
+
+    println!(
+        "Initialized empty Git repository in {}/.git/",
+        fs::canonicalize(path)?.display()
+    );
     Ok(())
 }
 
@@ -237,11 +227,13 @@ impl ObjWriter {
         let hash_hex = format!("{:x}", hash_bin);
 
         if let Some(zenc) = self.zenc {
-            zenc.finish()?;
+            zenc.finish().context("closing zlib stream")?;
             let from = Self::tmp_path(&self.tmp_rand)?;
             let to = path_from_hash(&hash_hex)?;
-            mkdir_p(to.parent().unwrap())?;
-            fs::rename(from, to)?;
+            fs::create_dir_all(to.parent().unwrap())
+                .with_context(|| format!("creating {}", to.parent().unwrap().display()))?;
+            fs::rename(from, &to)
+                .with_context(|| format!("renaming temporary file to {}", to.display()))?;
         }
 
         Ok(hash_hex)
@@ -328,19 +320,9 @@ use Commands::*;
 fn main() -> Result<()> {
     let args = Cli::parse();
     match args.command {
-        Init { directory } => {
-            git_init(&directory)?;
-            println!(
-                "Initialized empty Git repository in {}/.git/",
-                fs::canonicalize(directory)?.display()
-            );
-        }
-        CatFile { object } => {
-            cat_file_p(&object)?;
-        }
-        HashObject { write, file } => {
-            hash_object(&file, write)?;
-        }
+        Init { directory } => git_init(&directory)?,
+        CatFile { object } => cat_file_p(&object)?,
+        HashObject { write, file } => hash_object(&file, write)?,
     }
 
     Ok(())
