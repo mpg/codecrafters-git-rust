@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use clap::{Parser, Subcommand};
 use flate2::{bufread::ZlibDecoder, write::ZlibEncoder, Compression};
+use rand::Rng;
 use sha1::{Digest, Sha1};
 use std::fs;
 use std::io;
@@ -184,19 +185,25 @@ struct ObjWriter {
     zenc: Option<ZlibEncoder<fs::File>>,
     size: usize,
     seen: usize,
+    tmp_rand: [u8; 20],
 }
 
 impl ObjWriter {
-    fn tmp_path() -> Result<PathBuf> {
-        let tmp_name = format!("tmp{}", std::process::id());
+    fn tmp_path(tmp_rand: &[u8]) -> Result<PathBuf> {
+        let tmp_name = format!("tmpobj{}", hex::encode(tmp_rand));
         Ok(git_dir()?.join(tmp_name))
     }
 
     fn new(obj_type: ObjType, size: usize, write: bool) -> Result<ObjWriter> {
         let hasher = Sha1::new();
+
+        let mut tmp_rand = [0u8; 20];
+        if write {
+            rand::rng().fill(&mut tmp_rand);
+        }
         let zenc = if write {
             // We don't know the name (hash) yet, so use a temporary file
-            let tmp_path = Self::tmp_path()?;
+            let tmp_path = Self::tmp_path(&tmp_rand)?;
             let file = fs::File::create(&tmp_path)
                 .with_context(|| format!("could not create {}", tmp_path.display()))?;
 
@@ -214,6 +221,7 @@ impl ObjWriter {
             zenc,
             size,
             seen: 0,
+            tmp_rand,
         };
         write!(writer, "{} {}\0", obj_type.to_str(), size).context("writing object header")?;
         writer.seen = 0;
@@ -230,7 +238,7 @@ impl ObjWriter {
 
         if let Some(zenc) = self.zenc {
             zenc.finish()?;
-            let from = Self::tmp_path()?;
+            let from = Self::tmp_path(&self.tmp_rand)?;
             let to = path_from_hash(&hash_hex)?;
             mkdir_p(to.parent().unwrap())?;
             fs::rename(from, to)?;
