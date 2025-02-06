@@ -220,16 +220,16 @@ impl ObjWriter {
         Ok(writer)
     }
 
-    fn finish(&mut self) -> Result<String> {
+    fn finish(self) -> Result<String> {
         if self.seen != self.size {
             bail!("size mismatch: expected {}, got {}", self.size, self.seen);
         }
 
-        let hash_bin = self.hasher.finalize_reset();
+        let hash_bin = self.hasher.finalize();
         let hash_hex = format!("{:x}", hash_bin);
 
-        if let Some(zenc) = &mut self.zenc {
-            zenc.flush()?;
+        if let Some(zenc) = self.zenc {
+            zenc.finish()?;
             let from = Self::tmp_path()?;
             let to = path_from_hash(&hash_hex)?;
             mkdir_p(to.parent().unwrap())?;
