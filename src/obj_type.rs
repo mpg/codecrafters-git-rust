@@ -1,7 +1,4 @@
 use anyhow::{anyhow, Result};
-use std::io::prelude::*;
-
-use crate::common::read_up_to;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ObjType {
@@ -12,11 +9,8 @@ pub enum ObjType {
 }
 
 impl ObjType {
-    // Loose objects, once uncompressed, start with either
-    // "commit", "tree", "blob" or "tag", followed by a " ".
-    pub fn from_stream(s: &mut impl Read) -> Result<ObjType> {
-        let label = read_up_to(s, b' ')?;
-        match label.as_slice() {
+    pub fn from_bytes(label: &[u8]) -> Result<ObjType> {
+        match label {
             b"commit" => Ok(ObjType::Commit),
             b"tree" => Ok(ObjType::Tree),
             b"blob" => Ok(ObjType::Blob),

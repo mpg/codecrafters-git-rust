@@ -1,5 +1,4 @@
-use anyhow::{anyhow, bail, Context, Result};
-use std::io::prelude::*;
+use anyhow::{anyhow, bail, Result};
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
@@ -22,22 +21,4 @@ pub fn path_from_hash(hash: &str) -> Result<PathBuf> {
         .join("objects")
         .join(&hash[0..2])
         .join(&hash[2..]))
-}
-
-// Read from stream until the given delimiter is found.
-// Return content excluding the delimiter.
-//
-// Somewhat similar to BufRead::read_until(), but we want to use it with
-// ZlibDecoder, which does not implement BufRead (though internally buffered).
-pub fn read_up_to(s: &mut impl Read, delim: u8) -> Result<Vec<u8>> {
-    let mut out = Vec::new();
-    loop {
-        let mut buf = [0];
-        s.read_exact(&mut buf)
-            .with_context(|| format!("looking for {:?}", delim))?;
-        if buf[0] == delim {
-            return Ok(out);
-        }
-        out.push(buf[0]);
-    }
 }

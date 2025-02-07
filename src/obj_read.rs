@@ -7,11 +7,35 @@ use std::io::prelude::*;
 use crate::common::*;
 use crate::obj_type::ObjType;
 
+// Read from stream until the given delimiter is found.
+// Return content excluding the delimiter.
+//
+// Somewhat similar to BufRead::read_until(), but we want to use it with
+// ZlibDecoder, which does not implement BufRead (though internally buffered).
+fn read_up_to(s: &mut impl Read, delim: u8) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    loop {
+        let mut buf = [0];
+        s.read_exact(&mut buf)
+            .with_context(|| format!("looking for {:?}", delim))?;
+        if buf[0] == delim {
+            return Ok(out);
+        }
+        out.push(buf[0]);
+    }
+}
+
 // Read the size field of a loose object: ascii digits terminated by '\0'.
 fn read_obj_size(s: &mut impl Read) -> Result<usize> {
     let digits = read_up_to(s, b'\0')?;
     let size: usize = std::str::from_utf8(&digits)?.parse()?;
     Ok(size)
+}
+
+// Read the type of a loose object: ascii string terminated by space.
+fn read_obj_type(s: &mut impl Read) -> Result<ObjType> {
+    let label = read_up_to(s, b' ')?;
+    ObjType::from_bytes(&label)
 }
 
 pub struct ObjReader {
@@ -31,7 +55,7 @@ impl ObjReader {
         let bufreader = io::BufReader::new(file);
         let mut zdec = ZlibDecoder::new(bufreader);
 
-        let obj_type = ObjType::from_stream(&mut zdec)
+        let obj_type = read_obj_type(&mut zdec)
             .with_context(|| format!("could not read type of object {}", hash))?;
         let size = read_obj_size(&mut zdec)
             .with_context(|| format!("could not read size of object {}", hash))?;
