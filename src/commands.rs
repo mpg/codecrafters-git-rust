@@ -24,9 +24,13 @@ pub fn git_init(path: &Path) -> Result<()> {
 pub fn cat_file_p(hash: &str) -> Result<()> {
     let mut object = ObjReader::from_hash(hash)?;
     match object.obj_type {
-        ObjType::Blob => io::copy(&mut object, &mut io::stdout())
-            .with_context(|| format!("reading object {hash} to stdout"))?,
-        _ => bail!("cat-file -p only implemented for blobs"),
+        ObjType::Tree => {
+            ls_tree(hash, false)?;
+        }
+        _ => {
+            io::copy(&mut object, &mut io::stdout())
+                .with_context(|| format!("reading object {hash} to stdout"))?;
+        }
     };
     Ok(())
 }

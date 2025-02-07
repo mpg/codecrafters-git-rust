@@ -114,3 +114,28 @@ TREE=$(git write-tree)
 diff_cmd ls-tree --name-only "$TREE"
 diff_cmd ls-tree "$TREE"
 cleanup
+
+setup "git cat-file -p <tree>"
+"$TARGET" init >/dev/null
+echo foo > file
+mkdir dir
+echo bar > dir/f
+git add . >/dev/null
+TREE=$(git write-tree)
+diff_cmd cat-file -p "$TREE"
+cleanup
+
+setup "git cat-file -p <commit>"
+"$TARGET" init >/dev/null
+git commit --allow-empty -mtest-commit >/dev/null
+COMMIT=$(git rev-parse HEAD)
+diff_cmd cat-file -p "$COMMIT"
+cleanup
+
+setup "git cat-file -p <tag>"
+"$TARGET" init >/dev/null
+git commit --allow-empty -mtest-commit >/dev/null
+git tag -a -mtest-msg test-tag
+TAG=$(git rev-parse test-tag)
+diff_cmd cat-file -p "$TAG"
+cleanup
