@@ -48,25 +48,42 @@ pub fn hash_object(file: &Path, write: bool) -> Result<()> {
 }
 
 pub fn ls_tree(tree: &str, name_only: bool) -> Result<()> {
-    ensure!(name_only, "only name_only is supported for now");
     let mut object = ObjReader::from_hash(tree)?;
     ensure!(
         object.obj_type == ObjType::Tree,
         format!("not a tree: {}", tree)
     );
+
     while !object.eof()? {
         // <mode> <name>\0<20_byte_sha>
-        let _mode = object
+        let mode = object
             .read_up_to(b' ')
             .context("reading tree entry's mode")?;
         let name = object
             .read_up_to(b'\0')
             .context("reading tree entry's name")?;
-        println!("{}", std::str::from_utf8(&name)?);
         let mut hash = [0u8; 20];
         object
             .read_exact(&mut hash)
             .context("reading tree entry's hash")?;
+
+        let mut stdout = io::stdout().lock();
+        if !name_only {
+            let mode_type = match &mode[..] {
+                b"40000" => "040000 tree",
+                b"100644" => "100644 blob",
+                b"100755" => "100755 blob",
+                b"120000" => "120000 blob",
+                b"160000" => "160000 commit",
+                m => bail!("unknown mode {:?}", m),
+            };
+            let hash_hex = hex::encode(hash);
+            write!(stdout, "{mode_type} {hash_hex}\t")?;
+        }
+        stdout.write_all(&name)?;
+        stdout.write_all(b"\n")?;
+        stdout.flush()?;
     }
+
     Ok(())
 }

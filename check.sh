@@ -97,13 +97,14 @@ BLOB=$("$TARGET" hash-object -w "$SMALLFILE")
 diff "$SMALLFILE" <(git cat-file -p "$BLOB")
 cleanup
 
-setup "git ls-tree --name-only <tree> (empty)"
+setup "git ls-tree [--name-only] <tree> (empty)"
 "$TARGET" init >/dev/null
 TREE=$(git write-tree)
 diff_cmd ls-tree --name-only "$TREE"
+diff_cmd ls-tree "$TREE"
 cleanup
 
-setup "git ls-tree --name-only <tree> (two entries)"
+setup "git ls-tree [--name-only] <tree> (two entries)"
 "$TARGET" init >/dev/null
 echo foo > file
 mkdir dir
@@ -111,4 +112,5 @@ echo bar > dir/f
 git add . >/dev/null
 TREE=$(git write-tree)
 diff_cmd ls-tree --name-only "$TREE"
+diff_cmd ls-tree "$TREE"
 cleanup
