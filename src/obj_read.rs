@@ -1,4 +1,4 @@
-use anyhow::{ensure, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use flate2::bufread::ZlibDecoder;
 use std::fs;
 use std::io;
@@ -67,12 +67,33 @@ impl ObjReader {
             zdec,
         })
     }
+
+    pub fn read_up_to(&mut self, delim: u8) -> Result<Vec<u8>> {
+        read_up_to(self, delim)
+    }
+
+    // Tell if EOF has been reached,
+    // without consuming bytes unless the object reaches an error state
+    pub fn eof(&mut self) -> Result<bool> {
+        if self.used < self.size {
+            Ok(false)
+        } else {
+            match self.zdec.read(&mut [0]) {
+                Ok(0) => Ok(true),
+                Err(e) => Err(e.into()),
+                _ => {
+                    self.used = self.size + 1;
+                    Err(anyhow!("size mismatch: trailing bytes present"))
+                }
+            }
+        }
+    }
 }
 
 impl Read for ObjReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         match self.zdec.read(buf) {
-            Ok(0) => {
+            Ok(0) if !buf.is_empty() => {
                 if self.used == self.size {
                     Ok(0)
                 } else {

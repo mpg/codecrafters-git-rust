@@ -39,6 +39,14 @@ enum Commands {
         /// File to read
         file: PathBuf,
     },
+    /// List the contents of a tree object
+    LsTree {
+        /// List only filenames, one per line
+        #[arg(long)]
+        name_only: bool,
+        /// The tree object to list
+        tree: String,
+    },
 }
 use Commands::*;
 
@@ -48,6 +56,7 @@ fn main() -> anyhow::Result<()> {
         Init { directory } => git_init(&directory)?,
         CatFile { object } => cat_file_p(&object)?,
         HashObject { write, file } => hash_object(&file, write)?,
+        LsTree { name_only, tree } => ls_tree(&tree, name_only)?,
     }
 
     Ok(())

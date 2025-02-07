@@ -1,6 +1,7 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use std::fs;
 use std::io;
+use std::io::prelude::*;
 use std::path::Path;
 
 use crate::obj_read::ObjReader;
@@ -43,5 +44,23 @@ pub fn hash_object(file: &Path, write: bool) -> Result<()> {
         .context("writing out object to final location")?;
 
     println!("{}", hash_hex);
+    Ok(())
+}
+
+pub fn ls_tree(tree: &str, name_only: bool) -> Result<()> {
+    ensure!(name_only, "only name_only is supported for now");
+    let mut object = ObjReader::from_hash(tree)?;
+    ensure!(
+        object.obj_type == ObjType::Tree,
+        format!("not a tree: {}", tree)
+    );
+    while !object.eof()? {
+        // <mode> <name>\0<20_byte_sha>
+        let _mode = object.read_up_to(b' ').context("mode")?;
+        let name = object.read_up_to(b'\0').context("name")?;
+        println!("{}", std::str::from_utf8(&name)?);
+        let mut hash = [0u8; 20];
+        object.read_exact(&mut hash).context("hash")?;
+    }
     Ok(())
 }

@@ -96,3 +96,13 @@ SMALLFILE="$ROOT/Cargo.toml"
 BLOB=$("$TARGET" hash-object -w "$SMALLFILE")
 diff "$SMALLFILE" <(git cat-file -p "$BLOB")
 cleanup
+
+setup "git ls-tree --name-only"
+"$TARGET" init >/dev/null
+echo foo > file
+mkdir dir
+echo bar > dir/f
+git add . >/dev/null
+TREE=$(git write-tree)
+diff_cmd ls-tree --name-only "$TREE"
+cleanup
