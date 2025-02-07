@@ -17,7 +17,7 @@ fn read_up_to(s: &mut impl Read, delim: u8) -> Result<Vec<u8>> {
     loop {
         let mut buf = [0];
         s.read_exact(&mut buf)
-            .with_context(|| format!("looking for {:?}", delim))?;
+            .with_context(|| format!("looking for {:?}", delim as char))?;
         if buf[0] == delim {
             return Ok(out);
         }

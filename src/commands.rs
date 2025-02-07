@@ -56,11 +56,17 @@ pub fn ls_tree(tree: &str, name_only: bool) -> Result<()> {
     );
     while !object.eof()? {
         // <mode> <name>\0<20_byte_sha>
-        let _mode = object.read_up_to(b' ').context("mode")?;
-        let name = object.read_up_to(b'\0').context("name")?;
+        let _mode = object
+            .read_up_to(b' ')
+            .context("reading tree entry's mode")?;
+        let name = object
+            .read_up_to(b'\0')
+            .context("reading tree entry's name")?;
         println!("{}", std::str::from_utf8(&name)?);
         let mut hash = [0u8; 20];
-        object.read_exact(&mut hash).context("hash")?;
+        object
+            .read_exact(&mut hash)
+            .context("reading tree entry's hash")?;
     }
     Ok(())
 }
