@@ -5,6 +5,85 @@ use std::io::prelude::*;
 use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
 
+enum Mode {
+    Dir,
+    File,
+    Exe,
+    SymLink,
+    SubMod,
+}
+
+impl Mode {
+    fn from_bytes(mode: &[u8]) -> Result<Self> {
+        match mode {
+            b"40000" => Ok(Mode::Dir),
+            b"100644" => Ok(Mode::File),
+            b"100755" => Ok(Mode::Exe),
+            b"120000" => Ok(Mode::SymLink),
+            b"160000" => Ok(Mode::SubMod),
+            m => bail!("unknown mode {:?}", m),
+        }
+    }
+
+    fn to_str(&self) -> &'static str {
+        match self {
+            Mode::Dir => "40000",
+            Mode::File => "100644",
+            Mode::Exe => "100755",
+            Mode::SymLink => "120000",
+            Mode::SubMod => "160000",
+        }
+    }
+
+    fn obj_type(&self) -> ObjType {
+        match self {
+            Mode::Dir => ObjType::Tree,
+            Mode::File => ObjType::Blob,
+            Mode::Exe => ObjType::Blob,
+            Mode::SymLink => ObjType::Blob,
+            Mode::SubMod => ObjType::Commit,
+        }
+    }
+}
+
+struct Entry {
+    mode: Mode,
+    name: Vec<u8>,
+    hash: [u8; 20],
+}
+
+impl Entry {
+    fn parse(object: &mut ObjReader) -> Result<Self> {
+        // <mode> <name>\0<20_byte_sha>
+        let mode = object.read_up_to(b' ').context("reading mode")?;
+        let name = object.read_up_to(b'\0').context("reading name")?;
+        let mut hash = [0u8; 20];
+        object.read_exact(&mut hash).context("reading hash")?;
+
+        let mode = Mode::from_bytes(&mode)?;
+        Ok(Entry { mode, name, hash })
+    }
+
+    fn print_name(&self) -> Result<()> {
+        let mut stdout = io::stdout().lock();
+        stdout.write_all(&self.name)?;
+        stdout.write_all(b"\n")?;
+        Ok(())
+    }
+
+    fn print(&self) -> Result<()> {
+        let mut stdout = io::stdout().lock();
+        let mode = self.mode.to_str();
+        let otype = self.mode.obj_type().to_str();
+        let hash = hex::encode(self.hash);
+        write!(stdout, "{mode:0>6} {otype} {hash}\t")?;
+        stdout.write_all(&self.name)?;
+        stdout.write_all(b"\n")?;
+        stdout.flush()?;
+        Ok(())
+    }
+}
+
 pub struct TreeReader {
     object: ObjReader,
 }
@@ -24,38 +103,13 @@ impl TreeReader {
 
     pub fn print_entries(&mut self, name_only: bool) -> Result<()> {
         while !self.object.eof()? {
-            // <mode> <name>\0<20_byte_sha>
-            let mode = self
-                .object
-                .read_up_to(b' ')
-                .context("reading tree entry's mode")?;
-            let name = self
-                .object
-                .read_up_to(b'\0')
-                .context("reading tree entry's name")?;
-            let mut hash = [0u8; 20];
-            self.object
-                .read_exact(&mut hash)
-                .context("reading tree entry's hash")?;
-
-            let mut stdout = io::stdout().lock();
-            if !name_only {
-                let mode_type = match &mode[..] {
-                    b"40000" => "040000 tree",
-                    b"100644" => "100644 blob",
-                    b"100755" => "100755 blob",
-                    b"120000" => "120000 blob",
-                    b"160000" => "160000 commit",
-                    m => bail!("unknown mode {:?}", m),
-                };
-                let hash_hex = hex::encode(hash);
-                write!(stdout, "{mode_type} {hash_hex}\t")?;
+            let entry = Entry::parse(&mut self.object).context("parsing tree entry")?;
+            if name_only {
+                entry.print_name()?;
+            } else {
+                entry.print()?;
             }
-            stdout.write_all(&name)?;
-            stdout.write_all(b"\n")?;
-            stdout.flush()?;
         }
-
         Ok(())
     }
 }

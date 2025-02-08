@@ -37,6 +37,16 @@ assert_init() {
     )
 }
 
+# all types except submodule
+populate_tree() {
+    echo foo > file
+    mkdir dir
+    echo bar > dir/f
+    ln -s dir/f link
+    echo '#!/bin/true' > script
+    chmod +x script
+}
+
 setup "git init"
 "$TARGET" init > mine
 assert_init "."
@@ -97,18 +107,9 @@ BLOB=$("$TARGET" hash-object -w "$SMALLFILE")
 diff "$SMALLFILE" <(git cat-file -p "$BLOB")
 cleanup
 
-setup "git ls-tree [--name-only] <tree> (empty)"
+setup "git ls-tree [--name-only] <tree>"
 "$TARGET" init >/dev/null
-TREE=$(git write-tree)
-diff_cmd ls-tree --name-only "$TREE"
-diff_cmd ls-tree "$TREE"
-cleanup
-
-setup "git ls-tree [--name-only] <tree> (two entries)"
-"$TARGET" init >/dev/null
-echo foo > file
-mkdir dir
-echo bar > dir/f
+populate_tree
 git add . >/dev/null
 TREE=$(git write-tree)
 diff_cmd ls-tree --name-only "$TREE"
@@ -117,9 +118,7 @@ cleanup
 
 setup "git cat-file -p <tree>"
 "$TARGET" init >/dev/null
-echo foo > file
-mkdir dir
-echo bar > dir/f
+populate_tree
 git add . >/dev/null
 TREE=$(git write-tree)
 diff_cmd cat-file -p "$TREE"
