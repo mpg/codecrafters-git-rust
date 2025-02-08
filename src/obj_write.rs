@@ -15,6 +15,7 @@ pub struct ObjWriter {
     zenc: Option<ZlibEncoder<fs::File>>,
     size: usize,
     seen: usize,
+    past_header: bool,
     tmp_rand: [u8; 20],
 }
 
@@ -51,10 +52,11 @@ impl ObjWriter {
             zenc,
             size,
             seen: 0,
+            past_header: false,
             tmp_rand,
         };
         write!(writer, "{} {}\0", obj_type.to_str(), size).context("writing object header")?;
-        writer.seen = 0;
+        writer.past_header = true;
         Ok(writer)
     }
 
@@ -89,7 +91,9 @@ impl Write for ObjWriter {
         };
 
         self.hasher.update(&buf[..n]);
-        self.seen += n;
+        if self.past_header {
+            self.seen += n;
+        }
 
         if self.seen > self.size {
             Err(io::Error::new(

@@ -107,6 +107,12 @@ BLOB=$("$TARGET" hash-object -w "$SMALLFILE")
 diff "$SMALLFILE" <(git cat-file -p "$BLOB")
 cleanup
 
+setup "git hash-object -w <file> (empty)"
+"$TARGET" init >/dev/null
+touch foo
+diff_cmd hash-object -w foo
+cleanup
+
 setup "git ls-tree [--name-only] <tree>"
 "$TARGET" init >/dev/null
 populate_tree
