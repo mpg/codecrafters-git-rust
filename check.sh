@@ -22,9 +22,9 @@ trap cleanup EXIT
 cleanup
 
 diff_cmd() {
-    git "$@" > ref
-    "$TARGET" "$@" > mine
-    diff -a mine ref
+    git "$@" > /tmp/ref
+    "$TARGET" "$@" >/tmp/mine
+    diff -a /tmp/mine /tmp/ref
 }
 
 assert_init() {
@@ -37,14 +37,19 @@ assert_init() {
     )
 }
 
-# all types except submodule
 populate_tree() {
-    echo foo > file
+    # all types except submodule, in the top-level dir
+    echo foo > afile
+    touch empty-file
     mkdir dir
-    echo bar > dir/f
-    ln -s dir/f link
+    touch dir/f # so that dir is not ignored
+    ln -s dir/f link-rel
+    ln -s "$PWD/dir/f" link-abs
     echo '#!/bin/true' > script
     chmod +x script
+    # write-tree should ignore .git and empty directories
+    mkdir -p ignored-dir/.git
+    echo abc123 > ignored-dir/.git/HEAD
 }
 
 setup "git init"
@@ -143,4 +148,23 @@ git commit --allow-empty -mtest-commit >/dev/null
 git tag -a -mtest-msg test-tag
 TAG=$(git rev-parse test-tag)
 diff_cmd cat-file -p "$TAG"
+cleanup
+
+setup "git write-tree"
+"$TARGET" init >/dev/null
+populate_tree
+git add .
+diff_cmd write-tree
+# check (a few) blobs were created
+diff afile <(git cat-file -p $(git hash-object afile))
+diff dir/f <(git cat-file -p $(git hash-object dir/f))
+# check the (sub)trees were created
+git ls-tree -r --name-only $("$TARGET" write-tree) >/dev/null
+cleanup
+
+setup "git write-tree (from subdirectory)"
+"$TARGET" init >/dev/null
+populate_tree
+git add .
+(cd dir && diff_cmd write-tree)
 cleanup

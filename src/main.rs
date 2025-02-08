@@ -48,6 +48,8 @@ enum Commands {
         /// The tree object to list
         tree: String,
     },
+    /// Create a tree object from the current directory (not index)
+    WriteTree,
 }
 use Commands::*;
 
@@ -58,6 +60,7 @@ fn main() -> anyhow::Result<()> {
         CatFile { object } => cat_file_p(&object)?,
         HashObject { write, file } => hash_object(&file, write)?,
         LsTree { name_only, tree } => ls_tree(&tree, name_only)?,
+        WriteTree => write_tree()?,
     }
 
     Ok(())
