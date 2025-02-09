@@ -7,6 +7,7 @@ mod common;
 mod obj_read;
 mod obj_type;
 mod obj_write;
+mod tree_entry;
 mod tree_read;
 
 use commands::*;
