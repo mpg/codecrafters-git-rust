@@ -103,3 +103,14 @@ impl Entry {
         Ok(())
     }
 }
+
+pub fn push_tree_entry(out: &mut Vec<u8>, mode: Mode, name: &[u8], hash: &str) {
+    let hash = hex::decode(hash).expect("hash is valid hex");
+
+    // <mode> <name>\0<20_byte_sha>
+    out.extend_from_slice(mode.to_str().as_bytes());
+    out.push(b' ');
+    out.extend_from_slice(name);
+    out.push(b'\0');
+    out.extend_from_slice(&hash);
+}

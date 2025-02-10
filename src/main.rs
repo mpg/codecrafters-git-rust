@@ -9,6 +9,7 @@ mod obj_type;
 mod obj_write;
 mod tree_entry;
 mod tree_read;
+mod tree_write;
 
 use commands::*;
 
