@@ -3,13 +3,13 @@ use std::fs;
 use std::io;
 use std::io::prelude::*;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use crate::common::git_dir;
 use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
 use crate::obj_write::ObjWriter;
+use crate::tree_entry::Mode;
 use crate::tree_read::TreeReader;
 
 pub fn git_init(path: &Path) -> Result<()> {
@@ -64,10 +64,41 @@ pub fn ls_tree(tree_hash: &str, name_only: bool) -> Result<()> {
     tree.print_entries(name_only)
 }
 
+fn blob_from_symlink(link: &Path) -> Result<String> {
+    let dest = fs::read_link(link).context("readlink")?;
+    let content = dest.as_os_str().as_bytes();
+    let mut object = ObjWriter::new(ObjType::Blob, content.len(), true)?;
+    object.write_all(content)?;
+    object.finish()
+}
+
+fn hash_from_dir_entry(entry: &fs::DirEntry) -> Result<String> {
+    let file_type = entry.file_type().context("checking entry type")?;
+    if file_type.is_file() {
+        blob_from_file(&entry.path(), true).context("hashing file")
+    } else if file_type.is_dir() {
+        tree_from_dir(&entry.path()).context("hashing subtree")
+    } else if file_type.is_symlink() {
+        blob_from_symlink(&entry.path()).context("hashing symlink")
+    } else {
+        bail!("neither a regular file, nor a directory, nor a symlink");
+    }
+}
+
+fn write_dir_entry(mode: Mode, name: &[u8], hash: &str, out: &mut Vec<u8>) {
+    let hash = hex::decode(hash).expect("hash is valid hex");
+
+    out.extend_from_slice(mode.to_str().as_bytes());
+    out.push(b' ');
+    out.extend_from_slice(name);
+    out.push(b'\0');
+    out.extend_from_slice(&hash);
+}
+
 const EMPTY_TREE_HASH: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
-fn write_tree_from(dir: &Path) -> Result<String> {
-    // We need everything in memory so we know the size before writing the object.
+fn tree_from_dir(dir: &Path) -> Result<String> {
+    // We'll need everything in memory so we know the size before writing the object.
     let mut out = Vec::new();
 
     // We also need the complete list of entries so we can sort it by name.
@@ -80,45 +111,14 @@ fn write_tree_from(dir: &Path) -> Result<String> {
             continue;
         }
 
-        let file_type = entry.file_type().context("checking entry type")?;
-        let (hash_hex, mode) = if file_type.is_file() {
-            let hash_hex = blob_from_file(&entry.path(), true).context("blob_from_file")?;
+        let hash = hash_from_dir_entry(&entry)?;
+        if hash == EMPTY_TREE_HASH {
+            continue;
+        }
 
-            let meta = entry.metadata().context("reading entry metadata")?;
-            let mode = if meta.permissions().mode() & 0o111 != 0 {
-                &b"100755"[..]
-            } else {
-                &b"100644"[..]
-            };
+        let mode = Mode::from_dir_entry(&entry)?;
 
-            (hash_hex, mode)
-        } else if file_type.is_dir() {
-            let hash_hex = write_tree_from(&entry.path()).context("subtree")?;
-            if hash_hex == EMPTY_TREE_HASH {
-                continue;
-            }
-            let mode = &b"40000"[..];
-            (hash_hex, mode)
-        } else if file_type.is_symlink() {
-            let dest = fs::read_link(entry.path()).context("readlink")?;
-            let content = dest.as_os_str().as_bytes();
-            let mut object = ObjWriter::new(ObjType::Blob, content.len(), true)?;
-            object.write_all(content)?;
-            let hash_hex = object.finish()?;
-
-            let mode = &b"120000"[..];
-            (hash_hex, mode)
-        } else {
-            bail!("neither a regular file, nor a directory, nor a symlink");
-        };
-
-        let hash_bin = hex::decode(hash_hex).expect("hash is valid hex");
-
-        out.extend_from_slice(mode);
-        out.push(b' ');
-        out.extend_from_slice(&name);
-        out.push(b'\0');
-        out.extend_from_slice(&hash_bin);
+        write_dir_entry(mode, &name, &hash, &mut out);
     }
 
     let mut writer = ObjWriter::new(ObjType::Tree, out.len(), true).context("new")?;
@@ -128,7 +128,7 @@ fn write_tree_from(dir: &Path) -> Result<String> {
 
 pub fn write_tree() -> Result<()> {
     let root = git_dir()?.parent().expect(".git has a parent");
-    let hash = write_tree_from(root)?;
+    let hash = tree_from_dir(root)?;
     println!("{hash}");
     Ok(())
 }
