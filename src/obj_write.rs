@@ -5,6 +5,7 @@ use sha1::{Digest, Sha1};
 use std::fs;
 use std::io;
 use std::io::prelude::*;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
 use crate::common::*;
@@ -111,4 +112,19 @@ impl Write for ObjWriter {
             None => Ok(()),
         }
     }
+}
+
+pub fn write_object<R>(obj_type: ObjType, source: &mut R, write: bool) -> Result<String>
+where
+    R: Read + Seek,
+{
+    let current_pos = source.stream_position()?;
+    let size = source.seek(SeekFrom::End(0))?;
+    source.seek(SeekFrom::Start(current_pos))?;
+
+    let size = usize::try_from(size).context("object size does no fit in usize")?;
+
+    let mut object = ObjWriter::new(obj_type, size, write)?;
+    io::copy(source, &mut object).context("copying to object")?;
+    object.finish()
 }

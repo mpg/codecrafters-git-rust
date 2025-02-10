@@ -1,14 +1,13 @@
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::io;
-use std::io::prelude::*;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use crate::common::git_dir;
 use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
-use crate::obj_write::ObjWriter;
+use crate::obj_write::write_object;
 use crate::tree_entry::Mode;
 use crate::tree_read::TreeReader;
 
@@ -40,21 +39,10 @@ pub fn cat_file_p(hash: &str) -> Result<()> {
     Ok(())
 }
 
-fn blob_from_file(file: &Path, write: bool) -> Result<String> {
-    let mut source =
-        fs::File::open(file).with_context(|| format!("could not read {}", file.display()))?;
-    let size = source.metadata()?.len() as usize;
-
-    let mut object = ObjWriter::new(ObjType::Blob, size, write)?;
-    io::copy(&mut source, &mut object)
-        .with_context(|| format!("copying from {} to object", file.display()))?;
-    object
-        .finish()
-        .context("writing out object to final location")
-}
-
 pub fn hash_object(file: &Path, write: bool) -> Result<()> {
-    let hash_hex = blob_from_file(file, write)?;
+    let mut source = fs::File::open(file)
+        .with_context(|| format!("could not open {} for reading", file.display()))?;
+    let hash_hex = write_object(ObjType::Blob, &mut source, write)?;
     println!("{}", hash_hex);
     Ok(())
 }
@@ -64,22 +52,22 @@ pub fn ls_tree(tree_hash: &str, name_only: bool) -> Result<()> {
     tree.print_entries(name_only)
 }
 
-fn blob_from_symlink(link: &Path) -> Result<String> {
-    let dest = fs::read_link(link).context("readlink")?;
-    let content = dest.as_os_str().as_bytes();
-    let mut object = ObjWriter::new(ObjType::Blob, content.len(), true)?;
-    object.write_all(content)?;
-    object.finish()
-}
-
 fn hash_from_dir_entry(entry: &fs::DirEntry) -> Result<String> {
+    let path = entry.path();
     let file_type = entry.file_type().context("checking entry type")?;
-    if file_type.is_file() {
-        blob_from_file(&entry.path(), true).context("hashing file")
-    } else if file_type.is_dir() {
-        tree_from_dir(&entry.path()).context("hashing subtree")
+
+    if file_type.is_dir() {
+        tree_from_dir(&path).context("hashing subtree")
+    } else if file_type.is_file() {
+        let mut file =
+            fs::File::open(&path).with_context(|| format!("could not read {}", path.display()))?;
+
+        write_object(ObjType::Blob, &mut file, true).context("hashing file")
     } else if file_type.is_symlink() {
-        blob_from_symlink(&entry.path()).context("hashing symlink")
+        let dest = fs::read_link(path).context("readlink")?;
+        let mut content = io::Cursor::new(dest.as_os_str().as_bytes());
+
+        write_object(ObjType::Blob, &mut content, true).context("hashing symlink")
     } else {
         bail!("neither a regular file, nor a directory, nor a symlink");
     }
@@ -121,9 +109,7 @@ fn tree_from_dir(dir: &Path) -> Result<String> {
         write_dir_entry(mode, &name, &hash, &mut out);
     }
 
-    let mut writer = ObjWriter::new(ObjType::Tree, out.len(), true).context("new")?;
-    writer.write_all(&out).context("write_all")?;
-    writer.finish()
+    write_object(ObjType::Tree, &mut io::Cursor::new(out), true)
 }
 
 pub fn write_tree() -> Result<()> {
