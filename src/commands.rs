@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::io::prelude::*;
 use std::path::Path;
+use std::time;
 
 use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
@@ -62,20 +63,44 @@ fn get_env_or(var_name: &str, default: &str) -> String {
     env::var(var_name).unwrap_or(default.into())
 }
 
+// Only support the '@<timestamp> <offset>' format, eg epoch is @0 +0000
+fn get_env_date(var_name: &str) -> Option<String> {
+    let value = env::var(var_name).ok()?;
+    // Sanity-check format: value should start with @
+    match value.chars().next() {
+        Some('@') => Some(value[1..].into()),
+        _ => None,
+    }
+}
+
+fn get_env_date_or_current(var_name: &str) -> String {
+    if let Some(date) = get_env_date(var_name) {
+        return date;
+    }
+
+    let timestamp = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
+        .expect("live in the present")
+        .as_secs();
+    format!("{timestamp} +0000")
+}
+
 pub fn commit_tree(tree: &str, parents: &[String], messages: &[String]) -> Result<()> {
     let auth_name = get_env_or("GIT_AUTHOR_NAME", "Author Name");
     let auth_mail = get_env_or("GIT_AUTHOR_EMAIL", "author@example.org");
     let comm_name = get_env_or("GIT_COMMITTER_NAME", "Committer Name");
     let comm_mail = get_env_or("GIT_COMMITTER_EMAIL", "committer@example.org");
 
-    let mut content = Vec::new();
+    let auth_date = get_env_date_or_current("GIT_AUTHOR_DATE");
+    let comm_date = get_env_date_or_current("GIT_COMMITTER_DATE");
 
+    let mut content = Vec::new();
     writeln!(content, "tree {tree}")?;
     for p in parents {
         writeln!(content, "parent {p}")?;
     }
-    writeln!(content, "author {auth_name} <{auth_mail}> 0 +0000")?;
-    writeln!(content, "committer {comm_name} <{comm_mail}> 0 +0000")?;
+    writeln!(content, "author {auth_name} <{auth_mail}> {auth_date}")?;
+    writeln!(content, "committer {comm_name} <{comm_mail}> {comm_date}")?;
     for m in messages {
         writeln!(content, "\n{m}")?;
     }

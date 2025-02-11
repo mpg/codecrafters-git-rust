@@ -223,6 +223,24 @@ cleanup
 
 setup "git commit-tree"
 "$TARGET" init >/dev/null
-COMMIT=$("$TARGET" commit-tree a1b2c3 -m lol -p 1a2b3c)
-git cat-file commit "$COMMIT" >/dev/null
+TREE=$("$TARGET" write-tree)
+COMMIT_1=$("$TARGET" commit-tree "$TREE" -m initial)
+COMMIT_2=$("$TARGET" commit-tree "$TREE" -m second -m blah -p "$COMMIT_1")
+git show "$COMMIT_1" >/dev/null
+git show "$COMMIT_2" >/dev/null
+git log "$COMMIT_2" >/dev/null
+cleanup
+
+setup "git commit-tree (environment)"
+"$TARGET" init >/dev/null
+TREE=$("$TARGET" write-tree)
+(
+    export GIT_AUTHOR_NAME="A. Hacker"
+    export GIT_AUTHOR_EMAIL="hacker@example.org"
+    export GIT_AUTHOR_DATE="@0 +0000"
+    export GIT_COMMITTER_NAME="A. Maintainer"
+    export GIT_COMMITTER_EMAIL="maint@example.org"
+    export GIT_COMMITTER_DATE="@86400 +0000"
+    diff_cmd commit-tree -m "test commit" "$TREE"
+)
 cleanup
