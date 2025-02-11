@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::fs;
 use std::io;
+use std::io::prelude::*;
 use std::path::Path;
 
 use crate::obj_read::ObjReader;
@@ -52,6 +53,27 @@ pub fn ls_tree(tree_hash: &str, name_only: bool) -> Result<()> {
 
 pub fn write_tree() -> Result<()> {
     let hash = tree_from_workdir()?;
+    println!("{hash}");
+    Ok(())
+}
+
+pub fn commit_tree(tree: &str, parents: &[String], messages: &[String]) -> Result<()> {
+    let mut content = Vec::new();
+
+    writeln!(content, "tree {tree}")?;
+    for p in parents {
+        writeln!(content, "parent {p}")?;
+    }
+    writeln!(content, "author Author Name <author@example.com> 0 +0000")?;
+    writeln!(
+        content,
+        "committer Committer Name <committer@example.com> 0 +0000"
+    )?;
+    for m in messages {
+        writeln!(content, "\n{m}")?;
+    }
+
+    let hash = write_object(ObjType::Commit, &mut io::Cursor::new(content), true)?;
     println!("{hash}");
     Ok(())
 }

@@ -220,3 +220,9 @@ populate_tree_tricky_sort
 git add .
 diff_cmd write-tree
 cleanup
+
+setup "git commit-tree"
+"$TARGET" init >/dev/null
+COMMIT=$("$TARGET" commit-tree a1b2c3 -m lol -p 1a2b3c)
+git cat-file commit "$COMMIT" >/dev/null
+cleanup

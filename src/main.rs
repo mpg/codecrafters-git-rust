@@ -52,6 +52,17 @@ enum Commands {
     },
     /// Create a tree object from the current directory (not index)
     WriteTree,
+    /// Create a new commit object
+    CommitTree {
+        /// Each -p indicates the id of a parent commit object
+        #[arg(short)]
+        parent: Vec<String>,
+        /// A paragraph in the commit log message
+        #[arg(short, required = true)]
+        message: Vec<String>,
+        /// An existing tree object
+        tree: String,
+    },
 }
 use Commands::*;
 
@@ -63,6 +74,11 @@ fn main() -> anyhow::Result<()> {
         HashObject { write, file } => hash_object(&file, write)?,
         LsTree { name_only, tree } => ls_tree(&tree, name_only)?,
         WriteTree => write_tree()?,
+        CommitTree {
+            parent,
+            message,
+            tree,
+        } => commit_tree(&tree, &parent, &message)?,
     }
 
     Ok(())
