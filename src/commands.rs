@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::env;
 use std::fs;
 use std::io;
 use std::io::prelude::*;
@@ -57,18 +58,24 @@ pub fn write_tree() -> Result<()> {
     Ok(())
 }
 
+fn get_env_or(var_name: &str, default: &str) -> String {
+    env::var(var_name).unwrap_or(default.into())
+}
+
 pub fn commit_tree(tree: &str, parents: &[String], messages: &[String]) -> Result<()> {
+    let auth_name = get_env_or("GIT_AUTHOR_NAME", "Author Name");
+    let auth_mail = get_env_or("GIT_AUTHOR_EMAIL", "author@example.org");
+    let comm_name = get_env_or("GIT_COMMITTER_NAME", "Committer Name");
+    let comm_mail = get_env_or("GIT_COMMITTER_EMAIL", "committer@example.org");
+
     let mut content = Vec::new();
 
     writeln!(content, "tree {tree}")?;
     for p in parents {
         writeln!(content, "parent {p}")?;
     }
-    writeln!(content, "author Author Name <author@example.com> 0 +0000")?;
-    writeln!(
-        content,
-        "committer Committer Name <committer@example.com> 0 +0000"
-    )?;
+    writeln!(content, "author {auth_name} <{auth_mail}> 0 +0000")?;
+    writeln!(content, "committer {comm_name} <{comm_mail}> 0 +0000")?;
     for m in messages {
         writeln!(content, "\n{m}")?;
     }
