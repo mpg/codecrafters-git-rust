@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
-use std::fs::DirEntry;
+
+use std::fs;
 use std::io;
 use std::io::prelude::*;
 use std::os::unix::fs::PermissionsExt;
@@ -27,18 +28,16 @@ impl Mode {
         }
     }
 
-    pub fn from_dir_entry(entry: &DirEntry) -> Result<Self> {
-        let file_type = entry.file_type().context("checking entry type")?;
-        if file_type.is_file() {
-            let meta = entry.metadata().context("reading entry metadata")?;
+    pub fn from_metadata(meta: &fs::Metadata) -> Result<Self> {
+        if meta.is_file() {
             if meta.permissions().mode() & 0o111 != 0 {
                 Ok(Mode::Exe)
             } else {
                 Ok(Mode::File)
             }
-        } else if file_type.is_dir() {
+        } else if meta.is_dir() {
             Ok(Mode::Dir)
-        } else if file_type.is_symlink() {
+        } else if meta.is_symlink() {
             Ok(Mode::SymLink)
         } else {
             bail!("neither a regular file, nor a directory, nor a symlink");

@@ -52,6 +52,46 @@ populate_tree() {
     echo abc123 > ignored-dir/.git/HEAD
 }
 
+dodir() {
+    # create non-empty dir, so that git sees it
+    mkdir $1 && touch $1/x
+}
+
+populate_tree_tricky_sort() {
+    # same length, alternating types
+    touch 0a
+    dodir 0b
+    touch 0c
+    dodir 0d
+    # same length, non-alternating types
+    touch 1a
+    touch 1b
+    dodir 1c
+    dodir 1d
+    # prefixes, alternating
+    touch 2a
+    dodir 2ab
+    touch 2abc
+    dodir 2abcd
+    # prefixes, non-alternating
+    touch 3a
+    touch 3ab
+    dodir 3abc
+    dodir 3abcd
+    # around '/', dir just shorter
+    touch 4.
+    dodir 4
+    touch 40
+    # around '/', all files
+    touch 5.
+    touch 5
+    touch 50
+    # around '/', all dirs
+    dodir 6.
+    dodir 6
+    dodir 60
+}
+
 setup "git init"
 "$TARGET" init > mine
 assert_init "."
@@ -167,4 +207,16 @@ setup "git write-tree (from subdirectory)"
 populate_tree
 git add .
 (cd dir && diff_cmd write-tree)
+cleanup
+
+setup "git write-tree (empty)"
+"$TARGET" init >/dev/null
+diff_cmd write-tree
+cleanup
+
+setup "git write-tree (tricky sorting rules)"
+"$TARGET" init >/dev/null
+populate_tree_tricky_sort
+git add .
+diff_cmd write-tree
 cleanup
