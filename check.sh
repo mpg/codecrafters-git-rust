@@ -9,12 +9,14 @@ cargo clippy -- -D warnings
 ROOT="$PWD"
 TARGET="$ROOT/target/debug/codecrafters-git"
 TESTDIR="$ROOT/test-$$"
+OTHERDIR="$ROOT/test2-$$"
 cleanup() {
     cd "$ROOT"
-    rm -rf "$TESTDIR"
+    rm -rf "$TESTDIR" "$OTHERDIR"
 }
 setup() {
     echo "$1"
+    mkdir "$OTHERDIR"
     mkdir "$TESTDIR"
     cd "$TESTDIR"
 }
@@ -221,7 +223,7 @@ git add .
 diff_cmd write-tree
 cleanup
 
-setup "git commit-tree"
+setup "git commit-tree <tree> -m <message> [-p <parent>]"
 "$TARGET" init >/dev/null
 TREE=$("$TARGET" write-tree)
 COMMIT_1=$("$TARGET" commit-tree "$TREE" -m initial)
@@ -231,7 +233,7 @@ git show "$COMMIT_2" >/dev/null
 git log "$COMMIT_2" >/dev/null
 cleanup
 
-setup "git commit-tree (environment)"
+setup "git commit-tree <tree> -m <message>... (environment)"
 "$TARGET" init >/dev/null
 TREE=$("$TARGET" write-tree)
 (
@@ -241,6 +243,20 @@ TREE=$("$TARGET" write-tree)
     export GIT_COMMITTER_NAME="A. Maintainer"
     export GIT_COMMITTER_EMAIL="maint@example.org"
     export GIT_COMMITTER_DATE="@86400 +0000"
-    diff_cmd commit-tree -m "test commit" "$TREE"
+    diff_cmd commit-tree -m "test commit" -m "second paragraph" -m "third" "$TREE"
 )
+cleanup
+
+setup "git checkout-empty <commit>"
+"$TARGET" init >/dev/null
+populate_tree
+rm -r ignored-dir
+TREE=$("$TARGET" write-tree)
+COMMIT=$("$TARGET" commit-tree "$TREE" -m initial)
+(
+    cd "$OTHERDIR"
+    cp -a "$TESTDIR/.git" .
+    "$TARGET" checkout-empty "$COMMIT"
+)
+diff <(ls -lR) <(cd "$OTHERDIR" && ls -lR)
 cleanup

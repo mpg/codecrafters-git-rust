@@ -1,12 +1,16 @@
 use anyhow::{bail, Context, Result};
-
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::io::prelude::*;
+use std::os::unix;
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
+use crate::tree_read::TreeReader;
 
 pub enum Mode {
     Dir,
@@ -99,6 +103,56 @@ impl Entry {
         stdout.write_all(&self.name)?;
         stdout.write_all(b"\n")?;
         stdout.flush()?;
+        Ok(())
+    }
+
+    pub fn actualise(&self, base_path: &Path) -> Result<()> {
+        let hash = hex::encode(self.hash);
+        let mut object =
+            ObjReader::from_hash(&hash).with_context(|| format!("opening object {hash}"))?;
+        let path = base_path.join(OsStr::from_bytes(&self.name));
+
+        match self.mode {
+            Mode::Dir => {
+                fs::create_dir(&path)
+                    .with_context(|| format!("creating directory {}", path.display()))?;
+                let tree = TreeReader::from_object(object)?;
+                tree.actualise_entries(&path)
+                    .with_context(|| format!("checking out, subdr {}", path.display()))?;
+            }
+            Mode::File | Mode::Exe => {
+                let mut out = fs::File::create(&path)
+                    .with_context(|| format!("creating file {}", path.display()))?;
+                io::copy(&mut object, &mut out)
+                    .with_context(|| format!("copying object {hash} to file {}", path.display()))?;
+                if let Mode::Exe = self.mode {
+                    let meta = out
+                        .metadata()
+                        .with_context(|| format!("stat {}", path.display()))?;
+                    let mut perms = meta.permissions();
+                    perms.set_mode(perms.mode() | 0o111);
+                    fs::set_permissions(&path, perms)
+                        .with_context(|| format!("making {} executable", path.display()))?;
+                }
+            }
+            Mode::SymLink => {
+                let mut target = Vec::new();
+                io::copy(&mut object, &mut target)
+                    .with_context(|| format!("reading from object {hash}"))?;
+                let target = OsStr::from_bytes(&target);
+                unix::fs::symlink(target, &path).with_context(|| {
+                    format!(
+                        "creating symlink {} -> {}",
+                        path.display(),
+                        Path::new(target).display()
+                    )
+                })?;
+            }
+            Mode::SubMod => {
+                bail!("support for submodule not implemented");
+            }
+        }
+
         Ok(())
     }
 }

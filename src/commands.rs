@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use std::env;
 use std::fs;
 use std::io;
@@ -6,6 +6,7 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::time;
 
+use crate::common::git_dir;
 use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
 use crate::obj_write::write_object;
@@ -29,7 +30,7 @@ pub fn cat_file_p(hash: &str) -> Result<()> {
     let mut object = ObjReader::from_hash(hash)?;
     match object.obj_type {
         ObjType::Tree => {
-            let mut tree = TreeReader::from_object(object)?;
+            let tree = TreeReader::from_object(object)?;
             tree.print_entries(false)?;
         }
         _ => {
@@ -49,7 +50,7 @@ pub fn hash_object(file: &Path, write: bool) -> Result<()> {
 }
 
 pub fn ls_tree(tree_hash: &str, name_only: bool) -> Result<()> {
-    let mut tree = TreeReader::from_hash(tree_hash)?;
+    let tree = TreeReader::from_hash(tree_hash)?;
     tree.print_entries(name_only)
 }
 
@@ -107,5 +108,30 @@ pub fn commit_tree(tree: &str, parents: &[String], messages: &[String]) -> Resul
 
     let hash = write_object(ObjType::Commit, &mut io::Cursor::new(content), true)?;
     println!("{hash}");
+    Ok(())
+}
+
+fn tree_from_commit(commit_hash: &str) -> Result<String> {
+    let mut commit = ObjReader::from_hash(commit_hash)
+        .with_context(|| format!("opening object {commit_hash}"))?;
+    let line = commit
+        .read_up_to(b'\n')
+        .with_context(|| format!("reading from object {commit_hash}"))?;
+    let line =
+        String::from_utf8(line).with_context(|| format!("malformed commit {commit_hash}"))?;
+    let Some(("tree", tree_hash)) = line.split_once(' ') else {
+        bail!("malformed commit {commit_hash}: no tree in first line");
+    };
+    Ok(tree_hash.into())
+}
+
+pub fn checkout_empty(commit_hash: &str) -> Result<()> {
+    let tree_hash = tree_from_commit(commit_hash)
+        .with_context(|| format!("getting tree hash from commit {commit_hash}"))?;
+    let tree = TreeReader::from_hash(&tree_hash)
+        .with_context(|| format!("opening tree object {tree_hash}"))?;
+    let root = git_dir()?.parent().expect(".git has a parent");
+    tree.actualise_entries(root)
+        .with_context(|| format!("checking out to {}", root.display()))?;
     Ok(())
 }

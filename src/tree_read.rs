@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use std::path::Path;
 
 use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
@@ -21,7 +22,7 @@ impl TreeReader {
         Ok(TreeReader { object })
     }
 
-    pub fn print_entries(&mut self, name_only: bool) -> Result<()> {
+    pub fn print_entries(mut self, name_only: bool) -> Result<()> {
         while !self.object.eof()? {
             let entry = Entry::parse(&mut self.object).context("parsing tree entry")?;
             if name_only {
@@ -29,6 +30,14 @@ impl TreeReader {
             } else {
                 entry.print()?;
             }
+        }
+        Ok(())
+    }
+
+    pub fn actualise_entries(mut self, base_path: &Path) -> Result<()> {
+        while !self.object.eof()? {
+            let entry = Entry::parse(&mut self.object).context("parsing tree entry")?;
+            entry.actualise(base_path)?;
         }
         Ok(())
     }

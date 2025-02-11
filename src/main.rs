@@ -63,6 +63,11 @@ enum Commands {
         /// An existing tree object
         tree: String,
     },
+    /// Write out working tree files from a commit (assumes an empty workdir)
+    CheckoutEmpty {
+        /// The commit for check out
+        commit: String,
+    },
 }
 use Commands::*;
 
@@ -79,6 +84,7 @@ fn main() -> anyhow::Result<()> {
             message,
             tree,
         } => commit_tree(&tree, &parent, &message)?,
+        CheckoutEmpty { commit } => checkout_empty(&commit)?,
     }
 
     Ok(())
