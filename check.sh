@@ -260,3 +260,25 @@ COMMIT=$("$TARGET" commit-tree "$TREE" -m initial)
 )
 diff <(ls -lR) <(cd "$OTHERDIR" && ls -lR)
 cleanup
+
+setup "git unpack-objects (undeltified, 2 blobs)"
+git init >/dev/null
+FILE1="$ROOT"/your_program.sh
+FILE2="$ROOT"/Cargo.toml
+BLOB1=$(git hash-object -w "$FILE1")
+BLOB2=$(git hash-object -w "$FILE2")
+printf "$BLOB1\n$BLOB2\n" | git pack-objects -q --depth=0 --stdout >mypack
+rm -rf .git
+"$TARGET" init >/dev/null
+"$TARGET" unpack-objects < mypack >/dev/null
+diff <(git cat-file -p $BLOB1) "$FILE1"
+diff <(git cat-file -p $BLOB2) "$FILE2"
+cleanup
+
+setup "git unpack-objects (undeltified)"
+(cd "$ROOT" && git pack-objects --all --depth=0 -q --stdout </dev/null) > mypack
+"$TARGET" init >/dev/null
+"$TARGET" unpack-objects < mypack >/dev/null
+COMMIT=$(cd "$ROOT" && git rev-parse HEAD)
+git cat-file commit "$COMMIT" >/dev/null
+cleanup

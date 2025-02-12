@@ -10,6 +10,7 @@ mod obj_write;
 mod tree_entry;
 mod tree_read;
 mod tree_write;
+mod unpack;
 
 use commands::*;
 
@@ -68,6 +69,8 @@ enum Commands {
         /// The commit for check out
         commit: String,
     },
+    /// Unpack objects from a packed archive
+    UnpackObjects,
 }
 use Commands::*;
 
@@ -85,6 +88,7 @@ fn main() -> anyhow::Result<()> {
             tree,
         } => commit_tree(&tree, &parent, &message)?,
         CheckoutEmpty { commit } => checkout_empty(&commit)?,
+        UnpackObjects => unpack_objects()?,
     }
 
     Ok(())

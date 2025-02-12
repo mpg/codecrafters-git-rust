@@ -12,6 +12,7 @@ use crate::obj_type::ObjType;
 use crate::obj_write::write_object;
 use crate::tree_read::TreeReader;
 use crate::tree_write::tree_from_workdir;
+use crate::unpack::unpack_from;
 
 pub fn git_init(path: &Path) -> Result<()> {
     let obj_dir = path.join(".git/objects");
@@ -133,5 +134,11 @@ pub fn checkout_empty(commit_hash: &str) -> Result<()> {
     let root = git_dir()?.parent().expect(".git has a parent");
     tree.actualise_entries(root)
         .with_context(|| format!("checking out to {}", root.display()))?;
+    Ok(())
+}
+
+pub fn unpack_objects() -> Result<()> {
+    let nb_obj = unpack_from(io::stdin().lock()).context("unpacking from stdin")?;
+    println!("Unpacked {nb_obj} objects");
     Ok(())
 }
