@@ -1,10 +1,62 @@
 use anyhow::{bail, Context, Result};
 use flate2::bufread::ZlibDecoder;
+use sha1::{Digest, Sha1};
 use std::io;
 use std::io::prelude::*;
 
 use crate::obj_type::ObjType;
 use crate::obj_write::ObjWriter;
+
+struct HashingReader<R> {
+    hasher: Sha1,
+    reader: R,
+}
+
+impl<R: BufRead> HashingReader<R> {
+    fn new(reader: R) -> Self {
+        let hasher = Sha1::new();
+        Self { hasher, reader }
+    }
+
+    fn finish(mut self) -> Result<()> {
+        let hash = self.hasher.finalize();
+        let mut foot = [0u8; 20];
+        self.reader
+            .read_exact(&mut foot)
+            .context("reading final checksum")?;
+        if hash != foot.into() {
+            bail!("checksum mismatch: exp {hash:?}, got {foot:?}");
+        }
+        let Ok(0) = self.reader.read(&mut [0]) else {
+            bail!("trailing data after final checksum");
+        };
+        Ok(())
+    }
+}
+
+impl<R: BufRead> BufRead for HashingReader<R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        self.reader.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        let bytes = self
+            .reader
+            .fill_buf()
+            .expect("previous call to fill_buf succeeded");
+        let amt = std::cmp::min(amt, bytes.len());
+        self.hasher.update(&bytes[..amt]);
+        self.reader.consume(amt);
+    }
+}
+
+impl<R: Read> Read for HashingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.reader.read(buf)?;
+        self.hasher.update(&buf[..n]);
+        Ok(n)
+    }
+}
 
 // gitformat-pack(5) "object entries, each of which looks like this"
 fn unpack_object(reader: &mut impl BufRead) -> Result<()> {
@@ -45,7 +97,9 @@ fn unpack_object(reader: &mut impl BufRead) -> Result<()> {
 }
 
 // gitformat-pack(5) "pack-*.pack files have the following format"
-pub fn unpack_from<R: BufRead>(mut reader: R) -> Result<u32> {
+pub fn unpack_from<R: BufRead>(reader: R) -> Result<u32> {
+    let mut reader = HashingReader::new(reader);
+
     // 4-byte signature "PACK" + 4-byte version number 2
     // 4-byte number of objects
     let mut head = [0u8; 12];
@@ -65,14 +119,7 @@ pub fn unpack_from<R: BufRead>(mut reader: R) -> Result<u32> {
     }
 
     // pack checksum
-    let mut foot = [0u8; 20];
-    reader
-        .read_exact(&mut foot)
-        .context("reading packfile checksum")?;
-    // should check the value, but for now just check we've reached EOF
-    let Ok(0) = reader.read(&mut [0]) else {
-        bail!("trailing data at end of packfile");
-    };
+    reader.finish().context("end of packfile")?;
 
     Ok(nb_obj)
 }
