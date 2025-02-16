@@ -94,41 +94,109 @@ fn unpack_undeltified(reader: &mut impl BufRead, obj_type: ObjType, size: usize)
     Ok(())
 }
 
-fn unpack_ref_delta(reader: &mut impl BufRead, size: usize) -> Result<()> {
+fn read_byte(reader: &mut impl Read) -> Result<u8> {
+    let mut buf = [0u8];
+    reader.read_exact(&mut buf)?;
+    Ok(buf[0])
+}
+
+// gitformat-pack(5) "Size encoding",
+// optionally keeping type_bits from the first byte to encode a type ID.
+fn read_size_and_opt_type(reader: &mut impl Read, type_bits: u8) -> Result<(u8, usize)> {
+    let mut byte = read_byte(reader).context("reading first byte")?;
+
+    // split the first byte between size and type
+    let mut size_bits = 7 - type_bits;
+    let size_mask = (1 << size_bits) - 1;
+    let type_mask = 0x7f & !size_mask;
+    let type_id = (byte & type_mask) >> size_bits;
+    let mut size = (byte & size_mask) as usize;
+
+    // keep reading size until the top bit is unset
+    while byte & 0x80 != 0 {
+        byte = read_byte(reader).context("reading continuation byte")?;
+        size += ((byte & 0x7f) as usize) << size_bits;
+        size_bits += 7;
+    }
+
+    Ok((type_id, size))
+}
+
+// gitformat-pack(5) "Instruction to copy from base object" - offset
+fn read_copy_offset(reader: &mut impl Read, bitmap: u8) -> Result<usize> {
+    let mut offset = 0;
+    for b in 0..4 {
+        if bitmap & (1 << b) != 0 {
+            let byte = read_byte(reader).context("read next byte")?;
+            offset += (byte as usize) << (8 * b);
+        }
+    }
+    Ok(offset)
+}
+
+// gitformat-pack(5) "Instruction to copy from base object" - size
+fn read_copy_size(reader: &mut impl Read, bitmap: u8) -> Result<usize> {
+    let mut size = 0;
+    for b in 0..3 {
+        if bitmap & (1 << (4 + b)) != 0 {
+            let byte = read_byte(reader).context("read next byte")?;
+            size += (byte as usize) << (8 * b);
+        }
+    }
+    Ok(size)
+}
+
+fn unpack_ref_delta(reader: &mut impl BufRead, instr_size: usize) -> Result<()> {
     let mut hash = [0u8; 20];
     reader
         .read_exact(&mut hash)
-        .context("reading base of ref_delta entry")?;
+        .context("reading hash of base object")?;
     let hash = hex::encode(hash);
-    let base_obj =
+
+    let mut reader = &mut ZlibDecoder::new(reader);
+    let (_, base_size) = read_size_and_opt_type(&mut reader, 0).context("reading base size")?;
+    let (_, obj_size) = read_size_and_opt_type(&mut reader, 0).context("reading object size")?;
+
+    let mut base_obj =
         ObjReader::from_hash(&hash).with_context(|| format!("opening base object {hash}"))?;
-    let writer = ObjWriter::new(base_obj.obj_type, size, true)
+    debug_assert!(base_obj.size == base_size);
+    // For now, read base object all at once in memory
+    let mut base = Vec::with_capacity(base_size);
+    io::copy(&mut base_obj, &mut base).with_context(|| format!("reading base object {hash}"))?;
+
+    let mut writer = ObjWriter::new(base_obj.obj_type, obj_size, true)
         .context("creating new object from ref_delta")?;
 
-    let _ = writer;
-    bail!("ref_delta not implemented yet");
+    while reader.total_out() < instr_size as u64 {
+        let first_byte = read_byte(reader).context("reading next instruction")?;
+        if first_byte & 0x80 != 0 {
+            let offset = read_copy_offset(reader, first_byte).context("reading offset")?;
+            let copy_size = read_copy_size(reader, first_byte).context("reading size")?;
+            writer
+                .write_all(&base[offset..offset + copy_size])
+                .context("copy from base")?;
+        } else {
+            let add_size = first_byte as usize;
+            let mut buf = vec![0u8; add_size];
+            reader
+                .read_exact(&mut buf)
+                .context("reading 'add new data' data")?;
+            writer
+                .write_all(&buf)
+                .context("writing 'add new data' data")?;
+        }
+    }
+
+    writer.finish().context("finalizing object")?;
+
+    Ok(())
 }
 
 // gitformat-pack(5) "object entries, each of which looks like this"
 fn unpack_object(reader: &mut impl BufRead) -> Result<()> {
     // n-byte type and length (3-bit type, (n-1)*7+4-bit length)
-    let mut buf = [0u8];
-    reader
-        .read_exact(&mut buf)
-        .context("reading object's first byte")?;
-    let type_id = (buf[0] >> 4) & 0b111;
+    let (type_id, size) = read_size_and_opt_type(reader, 3).context("reading type and size")?;
     let pack_type = PackObjType::from_byte(type_id)?;
-
-    // gitformat-pack(5) "Size encoding"
-    let mut size = (buf[0] & 0x0f) as usize;
-    let mut bits = 4;
-    while buf[0] & 0x80 != 0 {
-        reader
-            .read_exact(&mut buf)
-            .context("reading object's size")?;
-        size += ((buf[0] & 0x7f) as usize) << bits;
-        bits += 7;
-    }
 
     // compressed data
     match pack_type {

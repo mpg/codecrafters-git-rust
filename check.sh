@@ -275,8 +275,47 @@ diff <(git cat-file -p $BLOB1) "$FILE1"
 diff <(git cat-file -p $BLOB2) "$FILE2"
 cleanup
 
-setup "git unpack-objects (undeltified)"
+setup "git unpack-objects (undeltified, real-world)"
 (cd "$ROOT" && git pack-objects --all --depth=0 -q --stdout </dev/null) > mypack
+"$TARGET" init >/dev/null
+"$TARGET" unpack-objects < mypack >/dev/null
+COMMIT=$(cd "$ROOT" && git rev-parse HEAD)
+git cat-file commit "$COMMIT" >/dev/null
+cleanup
+
+setup "git unpack-objects (deltified: copy only)"
+# This will store B (longest) in full and for A use a single copy instruction.
+git init >/dev/null
+cp "$ROOT/your_program.sh" a
+cp "$ROOT/your_program.sh" b
+echo "# bla" >> b
+A=$(git hash-object -w a)
+B=$(git hash-object -w b)
+printf "$A\n$B\n" | git pack-objects -q --stdout >mypack
+rm -rf .git
+"$TARGET" init >/dev/null
+"$TARGET" unpack-objects < mypack >/dev/null
+diff <(git cat-file -p $A) a
+diff <(git cat-file -p $B) b
+cleanup
+
+setup "git unpack-objects (deltified: copy-add-copy)"
+# This will store one of them and for the other copy-add-copy.
+cp "$ROOT/your_program.sh" a
+cp "$ROOT/your_program.sh" b
+sed -i 's/Copied/COPIED/' b
+A=$(git hash-object -w a)
+B=$(git hash-object -w b)
+printf "$A\n$B\n" | git pack-objects -q --stdout >mypack
+rm -rf .git
+"$TARGET" init >/dev/null
+"$TARGET" unpack-objects < mypack >/dev/null
+diff <(git cat-file -p $A) a
+diff <(git cat-file -p $B) b
+cleanup
+
+setup "git unpack-objects (deltified, real-world)"
+(cd "$ROOT" && git pack-objects --all -q --stdout </dev/null) > mypack
 "$TARGET" init >/dev/null
 "$TARGET" unpack-objects < mypack >/dev/null
 COMMIT=$(cd "$ROOT" && git rev-parse HEAD)
