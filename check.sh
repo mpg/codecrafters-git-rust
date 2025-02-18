@@ -321,3 +321,8 @@ setup "git unpack-objects (deltified, real-world)"
 COMMIT=$(cd "$ROOT" && git rev-parse HEAD)
 git cat-file commit "$COMMIT" >/dev/null
 cleanup
+
+setup "git ls-remote <url> HEAD"
+REPO="https://github.com/mpg/ct"
+diff_cmd ls-remote "$REPO" HEAD
+diff_cmd ls-remote "$REPO/" HEAD
