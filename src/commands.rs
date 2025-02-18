@@ -1,4 +1,6 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
+use reqwest::blocking::Client;
+use reqwest::header::{HeaderMap, HeaderValue};
 use std::env;
 use std::fs;
 use std::io;
@@ -14,6 +16,7 @@ use crate::tree_read::TreeReader;
 use crate::tree_write::tree_from_workdir;
 use crate::unpack::unpack_from;
 
+// this is a comment
 pub fn git_init(path: &Path) -> Result<()> {
     let obj_dir = path.join(".git/objects");
     fs::create_dir_all(&obj_dir).with_context(|| format!("creating {}", obj_dir.display()))?;
@@ -140,5 +143,31 @@ pub fn checkout_empty(commit_hash: &str) -> Result<()> {
 pub fn unpack_objects() -> Result<()> {
     let nb_obj = unpack_from(io::stdin().lock()).context("unpacking from stdin")?;
     println!("Unpacked {nb_obj} objects");
+    Ok(())
+}
+
+pub fn ls_remote(repo_url: &str, pattern: &str) -> Result<()> {
+    ensure!(pattern == "HEAD", "ls-remote only implemented for HEAD");
+    let body = "0013command=ls-refs0000";
+
+    let request_url = format!("{}/git-upload-pack", repo_url.trim_end_matches('/'));
+
+    let mut headers = HeaderMap::new();
+    headers.insert("git-protocol", HeaderValue::from_static("version=2"));
+
+    let mut response = Client::new()
+        .post(request_url)
+        .headers(headers)
+        .body(body)
+        .send()
+        .context("sending request to server")?;
+
+    let mut data = String::new();
+    response
+        .read_to_string(&mut data)
+        .context("reading response from server")?;
+
+    let hash = &data[4..44]; // ignore length an go right for the hash
+    println!("{hash}\tHEAD");
     Ok(())
 }

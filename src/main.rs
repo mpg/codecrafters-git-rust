@@ -71,6 +71,13 @@ enum Commands {
     },
     /// Unpack objects from a packed archive
     UnpackObjects,
+    /// List references in a remote repository (only HEAD supported)
+    LsRemote {
+        /// The remote repository
+        repo: String,
+        /// The reference to list (must be HEAD)
+        pattern: String,
+    },
 }
 use Commands::*;
 
@@ -89,6 +96,7 @@ fn main() -> anyhow::Result<()> {
         } => commit_tree(&tree, &parent, &message)?,
         CheckoutEmpty { commit } => checkout_empty(&commit)?,
         UnpackObjects => unpack_objects()?,
+        LsRemote { repo, pattern } => ls_remote(&repo, &pattern)?,
     }
 
     Ok(())
