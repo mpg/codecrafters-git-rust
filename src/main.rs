@@ -4,6 +4,7 @@ use std::path::PathBuf;
 // Use a flat structure
 mod commands;
 mod common;
+mod network;
 mod obj_read;
 mod obj_type;
 mod obj_write;
