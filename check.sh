@@ -326,3 +326,11 @@ setup "git ls-remote <url> HEAD"
 REPO="https://github.com/mpg/ct"
 diff_cmd ls-remote "$REPO" HEAD
 diff_cmd ls-remote "$REPO/" HEAD
+cleanup
+
+setup "git clone <url> <dir>"
+REPO="https://github.com/mpg/ct"
+"$TARGET" clone "$REPO" foo >/dev/null
+test -f foo/results
+test -x foo/rungcc
+cleanup

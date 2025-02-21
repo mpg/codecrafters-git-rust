@@ -74,10 +74,17 @@ enum Commands {
     UnpackObjects,
     /// List references in a remote repository (only HEAD supported)
     LsRemote {
-        /// The remote repository
+        /// The remote repository URL (must be HTTP)
         repo: String,
         /// The reference to list (must be HEAD)
         pattern: String,
+    },
+    /// Clone a repository into a new directory
+    Clone {
+        /// The remote repository URL (must be HTTP)
+        repo: String,
+        /// The target directory (will be created if needed)
+        directory: PathBuf,
     },
 }
 use Commands::*;
@@ -98,6 +105,7 @@ fn main() -> anyhow::Result<()> {
         CheckoutEmpty { commit } => checkout_empty(&commit)?,
         UnpackObjects => unpack_objects()?,
         LsRemote { repo, pattern } => ls_remote(&repo, &pattern)?,
+        Clone { repo, directory } => clone(&repo, &directory)?,
     }
 
     Ok(())

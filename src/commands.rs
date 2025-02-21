@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time;
 
 use crate::common::git_dir;
-use crate::network::ls_remote_head;
+use crate::network::{get_pack, ls_remote_head};
 use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
 use crate::obj_write::write_object;
@@ -149,4 +149,17 @@ pub fn ls_remote(repo_url: &str, pattern: &str) -> Result<()> {
     let hash = ls_remote_head(repo_url).context("listing remote head")?;
     println!("{hash}\tHEAD");
     Ok(())
+}
+
+pub fn clone(repo_url: &str, directory: &Path) -> Result<()> {
+    git_init(directory).context("initializing git directory")?;
+    env::set_current_dir(directory)
+        .with_context(|| format!("changing working directory to {}", directory.display()))?;
+
+    let head = ls_remote_head(repo_url).context("listing remote head")?;
+    let pack = get_pack(repo_url, &head).context("fetching objects")?;
+    let nb_obj = unpack_from(pack).context("unpacking objects")?;
+    println!("Unpacked {nb_obj} objects");
+
+    checkout_empty(&head).context("checking out HEAD")
 }
