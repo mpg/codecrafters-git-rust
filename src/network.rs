@@ -5,23 +5,29 @@ use std::io;
 use std::io::prelude::*;
 use std::str;
 
+fn io_err_invalid(msg: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, msg)
+}
+
 // See gitprotocol-common(5) "pkt-line Format"
-fn read_pkt_line(buf: &mut [u8], src: &mut impl Read) -> Result<Option<usize>> {
-    src.read_exact(&mut buf[..4])
-        .context("reading pkt-line length")?;
-    let len = str::from_utf8(&buf[..4]).context("parsing pkt-line length")?;
-    let len = usize::from_str_radix(len, 16).context("parsing pkt-line length")?;
+fn read_pkt_line(buf: &mut [u8], src: &mut impl Read) -> io::Result<Option<usize>> {
+    src.read_exact(&mut buf[..4])?;
+    let Ok(len) = str::from_utf8(&buf[..4]) else {
+        return Err(io_err_invalid("invalid pkt-line length: not UTF-8"));
+    };
+    let Ok(len) = usize::from_str_radix(len, 16) else {
+        return Err(io_err_invalid("invalid pkt-line length: not hex"));
+    };
 
     if len == 0 {
         return Ok(None);
     }
 
     if len < 4 {
-        bail!("invalid pkt-line length: {}", len);
+        return Err(io_err_invalid(&format!("invalid pkt-line length: {}", len)));
     }
     let len = len - 4;
-    src.read_exact(&mut buf[..len])
-        .context("reading pkt-line data")?;
+    src.read_exact(&mut buf[..len])?;
 
     Ok(Some(len))
 }
@@ -61,13 +67,7 @@ impl BufRead for PackFileReader {
         while self.pos >= self.cap {
             debug_assert!(self.pos == self.cap);
 
-            let Ok(len) = read_pkt_line(&mut self.buf, &mut self.src) else {
-                // TODO: lose less information
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "reading next pkt-line",
-                ));
-            };
+            let len = read_pkt_line(&mut self.buf, &mut self.src)?;
 
             let Some(len) = len else {
                 // Flush means EOF, which we signal with empty slice
@@ -75,17 +75,14 @@ impl BufRead for PackFileReader {
             };
 
             if len < 1 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "next pkt-line has no stream ID",
-                ));
+                return Err(io_err_invalid("next pkt-line has no stream ID"));
             }
 
             if self.buf[0] != 1 {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("unexpected stream ID: {}", self.buf[0]),
-                ));
+                return Err(io_err_invalid(&format!(
+                    "unexpected stream ID: {}",
+                    self.buf[0]
+                )));
             }
 
             self.pos = 1;
