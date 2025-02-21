@@ -177,5 +177,7 @@ pub fn clone(repo_url: &str, directory: Option<impl AsRef<Path>>) -> Result<()> 
     let nb_obj = unpack_from(pack).context("unpacking objects")?;
     println!("Unpacked {nb_obj} objects");
 
+    fs::write(".git/HEAD", &head).context("updating HEAD")?;
+
     checkout_empty(&head).context("checking out HEAD")
 }
