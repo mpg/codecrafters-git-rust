@@ -334,3 +334,17 @@ REPO="https://github.com/mpg/ct"
 test -f foo/results
 test -x foo/rungcc
 cleanup
+
+setup "git clone <url>"
+REPO="https://github.com/mpg/ct"
+"$TARGET" clone "$REPO" >/dev/null
+test -f ct/results
+test -x ct/rungcc
+cleanup
+
+setup "git clone <url.git/>"
+REPO="https://github.com/mpg/ct.git/"
+"$TARGET" clone "$REPO" >/dev/null
+test -f ct/results
+test -x ct/rungcc
+cleanup

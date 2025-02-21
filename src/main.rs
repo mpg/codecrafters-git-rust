@@ -84,7 +84,7 @@ enum Commands {
         /// The remote repository URL (must be HTTP)
         repo: String,
         /// The target directory (will be created if needed)
-        directory: PathBuf,
+        directory: Option<PathBuf>,
     },
 }
 use Commands::*;
@@ -105,7 +105,7 @@ fn main() -> anyhow::Result<()> {
         CheckoutEmpty { commit } => checkout_empty(&commit)?,
         UnpackObjects => unpack_objects()?,
         LsRemote { repo, pattern } => ls_remote(&repo, &pattern)?,
-        Clone { repo, directory } => clone(&repo, &directory)?,
+        Clone { repo, directory } => clone(&repo, directory.as_ref())?,
     }
 
     Ok(())

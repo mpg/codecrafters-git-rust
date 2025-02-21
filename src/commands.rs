@@ -151,7 +151,23 @@ pub fn ls_remote(repo_url: &str, pattern: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn clone(repo_url: &str, directory: &Path) -> Result<()> {
+fn dir_from_repo_url(url: &str) -> &Path {
+    let url = url.trim_end_matches("/");
+    let url = url.trim_end_matches(".git");
+    let url = url.trim_end_matches("/");
+    let last = url
+        .rsplit("/")
+        .next()
+        .expect("always at least one component");
+    Path::new(last)
+}
+
+pub fn clone(repo_url: &str, directory: Option<impl AsRef<Path>>) -> Result<()> {
+    let directory = match &directory {
+        Some(d) => d.as_ref(),
+        None => dir_from_repo_url(repo_url),
+    };
+
     git_init(directory).context("initializing git directory")?;
     env::set_current_dir(directory)
         .with_context(|| format!("changing working directory to {}", directory.display()))?;
