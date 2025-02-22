@@ -18,7 +18,7 @@ use crate::unpack::unpack_from;
 pub fn git_init(path: &Path) -> Result<()> {
     let obj_dir = path.join(".git/objects");
     fs::create_dir_all(&obj_dir).with_context(|| format!("creating {}", obj_dir.display()))?;
-    fs::create_dir(path.join(".git/refs")).context("creating .git/refs")?;
+    fs::create_dir_all(path.join(".git/refs/heads")).context("creating .git/refs/heads")?;
     fs::write(path.join(".git/HEAD"), b"ref: refs/heads/main\n").context("creating .git/HEAD")?;
 
     println!(
@@ -146,7 +146,7 @@ pub fn unpack_objects() -> Result<()> {
 
 pub fn ls_remote(repo_url: &str, pattern: &str) -> Result<()> {
     ensure!(pattern == "HEAD", "ls-remote only implemented for HEAD");
-    let hash = ls_remote_head(repo_url).context("listing remote head")?;
+    let (hash, _) = ls_remote_head(repo_url).context("listing remote head")?;
     println!("{hash}\tHEAD");
     Ok(())
 }
@@ -172,12 +172,14 @@ pub fn clone(repo_url: &str, directory: Option<impl AsRef<Path>>) -> Result<()> 
     env::set_current_dir(directory)
         .with_context(|| format!("changing working directory to {}", directory.display()))?;
 
-    let head = ls_remote_head(repo_url).context("listing remote head")?;
+    let (head, branch) = ls_remote_head(repo_url).context("listing remote head")?;
     let pack = get_pack(repo_url, &head).context("fetching objects")?;
     let nb_obj = unpack_from(pack).context("unpacking objects")?;
     println!("Unpacked {nb_obj} objects");
 
-    fs::write(".git/HEAD", &head).context("updating HEAD")?;
+    fs::write(".git/HEAD", format!("ref: refs/heads/{branch}\n")).context("updating HEAD")?;
+    fs::write(format!(".git/refs/heads/{branch}"), &head)
+        .with_context(|| format!("updating branch {branch}"))?;
 
     checkout_empty(&head).context("checking out HEAD")
 }

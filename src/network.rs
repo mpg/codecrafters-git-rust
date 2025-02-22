@@ -10,9 +10,10 @@ fn io_err_invalid(msg: &str) -> io::Error {
 }
 
 // See gitprotocol-common(5) "pkt-line Format"
-fn read_pkt_line(buf: &mut [u8], src: &mut impl Read) -> io::Result<Option<usize>> {
-    src.read_exact(&mut buf[..4])?;
-    let Ok(len) = str::from_utf8(&buf[..4]) else {
+fn read_pkt_line_len(src: &mut impl Read) -> io::Result<Option<usize>> {
+    let mut buf = [0; 4];
+    src.read_exact(&mut buf)?;
+    let Ok(len) = str::from_utf8(&buf) else {
         return Err(io_err_invalid("invalid pkt-line length: not UTF-8"));
     };
     let Ok(len) = usize::from_str_radix(len, 16) else {
@@ -27,8 +28,18 @@ fn read_pkt_line(buf: &mut [u8], src: &mut impl Read) -> io::Result<Option<usize
         return Err(io_err_invalid(&format!("invalid pkt-line length: {}", len)));
     }
     let len = len - 4;
-    src.read_exact(&mut buf[..len])?;
 
+    Ok(Some(len))
+}
+
+// See gitprotocol-common(5) "pkt-line Format"
+fn read_pkt_line(buf: &mut [u8], src: &mut impl Read) -> io::Result<Option<usize>> {
+    let len = read_pkt_line_len(src)?;
+    let Some(len) = len else {
+        return Ok(None);
+    };
+
+    src.read_exact(&mut buf[..len])?;
     Ok(Some(len))
 }
 
@@ -123,18 +134,38 @@ pub fn request_upload_pack_v2(repo_url: &str, body: &str) -> Result<Response> {
     Ok(response)
 }
 
-pub fn ls_remote_head(repo_url: &str) -> Result<String> {
+pub fn ls_remote_head(repo_url: &str) -> Result<(String, String)> {
     // gitprotocol-v2(5) + gitprotocol-common(5)
-    let body = "0013command=ls-refs0000";
-    let mut response =
-        request_upload_pack_v2(repo_url, body).context("making ls-remote request")?;
-    let mut data = String::new();
-    response
-        .read_to_string(&mut data)
-        .context("reading response from server")?;
+    let body = "0013command=ls-refs0001000bsymrefs0013ref-prefix HEAD0000";
+    let mut response = request_upload_pack_v2(repo_url, body).context("making ls-refs request")?;
 
-    // we know HEAD is the first line, and hash comes after 4-digit length
-    Ok(data[4..44].to_owned())
+    //let mut data = String::new();
+    //response
+    //    .read_to_string(&mut data)
+    //    .context("reading response from server")?;
+    //eprintln!("{data}");
+
+    let len = read_pkt_line_len(&mut response)
+        .context("reading first pkt-line length")?
+        .context("unexpected flush at start of response")?;
+    let mut line = vec![0; len];
+    response
+        .read_exact(&mut line)
+        .context("reading first pkt-line content")?;
+    let line = str::from_utf8(&line).context("response is not ASCII")?;
+    let line = line.trim_end_matches('\n');
+
+    // <40-char hash> HEAD symref-target:refs/heads/<name>
+    // let's be lazy and directly index into the line
+    let hash = line[..40].to_owned();
+    let middle = &line[40..71];
+    let name = line[71..].to_owned();
+
+    if middle != " HEAD symref-target:refs/heads/" {
+        bail!("unsupported response format: {middle}");
+    }
+
+    Ok((hash, name))
 }
 
 pub fn get_pack(repo_url: &str, head: &str) -> Result<impl BufRead> {
