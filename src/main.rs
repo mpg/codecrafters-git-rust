@@ -1,3 +1,14 @@
+//! A toy implementation of a small subset of git.
+//!
+//! See [Commands] for the list of git sub-commands (partially) implemented.
+//!
+//! Major restrictions (within the subset of commands implemented):
+//! - Only works with loose objects (ie will not work after git gc).
+//! - No index (stating area), no support for .gitignore.
+//! - No support for git config (only environment variables for author etc.).
+//! - The checkout-empty command will happily overwrite files if the directory's not empty.
+//! - Hashes may not be abbreviated; using references (eg branch names) is not supported.
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 

@@ -1,3 +1,5 @@
+//! Functions implementing each subcommand from the CLI.
+
 use anyhow::{bail, ensure, Context, Result};
 use std::env;
 use std::fs;
@@ -15,6 +17,7 @@ use crate::tree_read::TreeReader;
 use crate::tree_write::tree_from_workdir;
 use crate::unpack::unpack_from;
 
+/// The "git init" command - partial implementation: git populates .git more fully.
 pub fn git_init(path: &Path) -> Result<()> {
     let obj_dir = path.join(".git/objects");
     fs::create_dir_all(&obj_dir).with_context(|| format!("creating {}", obj_dir.display()))?;
@@ -28,12 +31,15 @@ pub fn git_init(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The "cat-file -p" command.
 pub fn cat_file_p(hash: &str) -> Result<()> {
-    let mut object = ObjReader::from_hash(hash)?;
+    let mut object =
+        ObjReader::from_hash(hash).with_context(|| format!("opening object {hash}"))?;
     match object.obj_type {
         ObjType::Tree => {
             let tree = TreeReader::from_object(object)?;
-            tree.print_entries(false)?;
+            tree.print_entries(false)
+                .with_context(|| format!("reading & printing tree object {hash}"))?;
         }
         _ => {
             io::copy(&mut object, &mut io::stdout())
@@ -43,19 +49,26 @@ pub fn cat_file_p(hash: &str) -> Result<()> {
     Ok(())
 }
 
+/// The "hash-object [-w]" command.
 pub fn hash_object(file: &Path, write: bool) -> Result<()> {
     let mut source = fs::File::open(file)
         .with_context(|| format!("could not open {} for reading", file.display()))?;
-    let hash_hex = write_object(ObjType::Blob, &mut source, write)?;
+    let hash_hex = write_object(ObjType::Blob, &mut source, write).context("hashing object")?;
     println!("{}", hash_hex);
     Ok(())
 }
 
+/// The "ls-tree [--name-only]" command.
 pub fn ls_tree(tree_hash: &str, name_only: bool) -> Result<()> {
-    let tree = TreeReader::from_hash(tree_hash)?;
+    let tree = TreeReader::from_hash(tree_hash)
+        .with_context(|| format!("opening tree object {tree_hash}"))?;
     tree.print_entries(name_only)
+        .with_context(|| format!("reading & printing tree object {tree_hash}"))?;
+    Ok(())
 }
 
+/// The "write-tree" command, except it takes the tree directly from the filesystem,
+/// bypassing the index. Also, no support for .gitignore either.
 pub fn write_tree() -> Result<()> {
     let hash = tree_from_workdir()?;
     println!("{hash}");
@@ -88,6 +101,9 @@ fn get_env_date_or_current(var_name: &str) -> String {
     format!("{timestamp} +0000")
 }
 
+/// The "commit-tree" command, except no support for config: author and commiter details
+/// taken either from enviornment variables, or hardcoded defaults.
+/// Also, no support for time zones.
 pub fn commit_tree(tree: &str, parents: &[String], messages: &[String]) -> Result<()> {
     let auth_name = get_env_or("GIT_AUTHOR_NAME", "Author Name");
     let auth_mail = get_env_or("GIT_AUTHOR_EMAIL", "author@example.org");
@@ -98,17 +114,20 @@ pub fn commit_tree(tree: &str, parents: &[String], messages: &[String]) -> Resul
     let comm_date = get_env_date_or_current("GIT_COMMITTER_DATE");
 
     let mut content = Vec::new();
-    writeln!(content, "tree {tree}")?;
+    writeln!(content, "tree {tree}").context("writing commit contents (tree)")?;
     for p in parents {
-        writeln!(content, "parent {p}")?;
+        writeln!(content, "parent {p}").context("writing commit contents (parent)")?;
     }
-    writeln!(content, "author {auth_name} <{auth_mail}> {auth_date}")?;
-    writeln!(content, "committer {comm_name} <{comm_mail}> {comm_date}")?;
+    writeln!(content, "author {auth_name} <{auth_mail}> {auth_date}")
+        .context("writing commit contents (author)")?;
+    writeln!(content, "committer {comm_name} <{comm_mail}> {comm_date}")
+        .context("writing commit contents (committer)")?;
     for m in messages {
-        writeln!(content, "\n{m}")?;
+        writeln!(content, "\n{m}").context("writing commit contents (message)")?;
     }
 
-    let hash = write_object(ObjType::Commit, &mut io::Cursor::new(content), true)?;
+    let hash = write_object(ObjType::Commit, &mut io::Cursor::new(content), true)
+        .context("writing out commit object")?;
     println!("{hash}");
     Ok(())
 }
@@ -127,6 +146,10 @@ fn tree_from_commit(commit_hash: &str) -> Result<String> {
     Ok(tree_hash.into())
 }
 
+/// The "checkout-empty" (made up) command - a bit like "checkout" except:
+/// - it assumes the working directory is empty, and will overwrite files otherwise;
+/// - TODO: it does not update HEAD;
+/// - in only accepts an unabbreviate commit hash (no branch name etc.).
 pub fn checkout_empty(commit_hash: &str) -> Result<()> {
     let tree_hash = tree_from_commit(commit_hash)
         .with_context(|| format!("getting tree hash from commit {commit_hash}"))?;
@@ -138,12 +161,14 @@ pub fn checkout_empty(commit_hash: &str) -> Result<()> {
     Ok(())
 }
 
+/// The "unpack-objects" command - does not support ofs-delta deltified objects.
 pub fn unpack_objects() -> Result<()> {
     let nb_obj = unpack_from(io::stdin().lock()).context("unpacking from stdin")?;
     println!("Unpacked {nb_obj} objects");
     Ok(())
 }
 
+/// The "ls-remote" command - can only list HEAD.
 pub fn ls_remote(repo_url: &str, pattern: &str) -> Result<()> {
     ensure!(pattern == "HEAD", "ls-remote only implemented for HEAD");
     let (hash, _) = ls_remote_head(repo_url).context("listing remote head")?;
@@ -151,6 +176,7 @@ pub fn ls_remote(repo_url: &str, pattern: &str) -> Result<()> {
     Ok(())
 }
 
+// This seems to be roughly what git is doing based on experiments.
 fn dir_from_repo_url(url: &str) -> &Path {
     let url = url.trim_end_matches("/");
     let url = url.trim_end_matches(".git");
@@ -162,6 +188,9 @@ fn dir_from_repo_url(url: &str) -> &Path {
     Path::new(last)
 }
 
+/// The "clone" command. Unlike the real one, it unpacks all object to loose storage.
+/// Also, only gets the default branch, not other refs.
+/// TODO: does not check if the destination directory is empty.
 pub fn clone(repo_url: &str, directory: Option<impl AsRef<Path>>) -> Result<()> {
     let directory = match &directory {
         Some(d) => d.as_ref(),
