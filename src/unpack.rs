@@ -123,24 +123,24 @@ fn read_size_and_opt_type(reader: &mut impl Read, type_bits: u8) -> Result<(u8, 
 }
 
 // gitformat-pack(5) "Instruction to copy from base object" - offset
-fn read_copy_offset(reader: &mut impl Read, bitmap: u8) -> Result<usize> {
+fn read_copy_offset(reader: &mut impl Read, bitmap: u8) -> Result<u64> {
     let mut offset = 0;
     for b in 0..4 {
         if bitmap & (1 << b) != 0 {
             let byte = read_byte(reader).context("read next byte")?;
-            offset += (byte as usize) << (8 * b);
+            offset += (byte as u64) << (8 * b);
         }
     }
     Ok(offset)
 }
 
 // gitformat-pack(5) "Instruction to copy from base object" - size
-fn read_copy_size(reader: &mut impl Read, bitmap: u8) -> Result<usize> {
+fn read_copy_size(reader: &mut impl Read, bitmap: u8) -> Result<u64> {
     let mut size = 0;
     for b in 0..3 {
         if bitmap & (1 << (4 + b)) != 0 {
             let byte = read_byte(reader).context("read next byte")?;
-            size += (byte as usize) << (8 * b);
+            size += (byte as u64) << (8 * b);
         }
     }
     Ok(size)
@@ -154,28 +154,32 @@ fn unpack_ref_delta(reader: &mut impl BufRead, instr_size: usize) -> Result<()> 
     let hash = hex::encode(hash);
 
     let mut reader = &mut ZlibDecoder::new(reader);
-    let (_, base_size) = read_size_and_opt_type(&mut reader, 0).context("reading base size")?;
+    let (_, _) = read_size_and_opt_type(&mut reader, 0).context("reading base size")?;
     let (_, obj_size) = read_size_and_opt_type(&mut reader, 0).context("reading object size")?;
 
-    let mut base_obj =
-        ObjReader::from_hash(&hash).with_context(|| format!("opening base object {hash}"))?;
-    debug_assert!(base_obj.size == base_size);
-    // For now, read base object all at once in memory
-    let mut base = Vec::with_capacity(base_size);
-    io::copy(&mut base_obj, &mut base).with_context(|| format!("reading base object {hash}"))?;
-
-    let mut writer = ObjWriter::new(base_obj.obj_type, obj_size, true)
+    // Only get the type from the base object, we'll open it again when copying data.
+    // Save memory (not holding the whole content at once) at the expense of performance.
+    let base_obj_type = ObjReader::from_hash(&hash)
+        .with_context(|| format!("opening base object {hash}"))?
+        .obj_type;
+    let mut writer = ObjWriter::new(base_obj_type, obj_size, true)
         .context("creating new object from ref_delta")?;
 
     while reader.total_out() < instr_size as u64 {
         let first_byte = read_byte(reader).context("reading next instruction")?;
         if first_byte & 0x80 != 0 {
+            // copy instruction
             let offset = read_copy_offset(reader, first_byte).context("reading offset")?;
             let copy_size = read_copy_size(reader, first_byte).context("reading size")?;
-            writer
-                .write_all(&base[offset..offset + copy_size])
-                .context("copy from base")?;
+
+            let mut base_obj = ObjReader::from_hash(&hash)
+                .with_context(|| format!("opening base object {hash}"))?;
+            io::copy(&mut base_obj.by_ref().take(offset), &mut io::sink())
+                .with_context(|| format!("skipping bytes in base object {hash}"))?;
+            io::copy(&mut base_obj.take(copy_size), &mut writer)
+                .with_context(|| format!("copying from base object {hash}"))?;
         } else {
+            // add instruction
             let add_size = first_byte as usize;
             let mut buf = vec![0u8; add_size];
             reader
