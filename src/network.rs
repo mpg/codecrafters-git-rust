@@ -32,32 +32,29 @@ fn read_pkt_line_len(src: &mut impl Read) -> io::Result<Option<usize>> {
     Ok(Some(len))
 }
 
-// See gitprotocol-common(5) "pkt-line Format"
-fn read_pkt_line(buf: &mut [u8], src: &mut impl Read) -> io::Result<Option<usize>> {
-    let len = read_pkt_line_len(src)?;
-    let Some(len) = len else {
-        return Ok(None);
-    };
-
-    src.read_exact(&mut buf[..len])?;
-    Ok(Some(len))
-}
-
 // A filter that wraps a Response to a fetch request and returns the bytes of the packfile.
 // Assumes no-progress was used in the request so we only receive on stream #1.
 struct PackFileReader {
     buf: Vec<u8>,
     pos: usize,
     cap: usize,
+    rem: usize,
     src: Response,
 }
 
 impl PackFileReader {
     fn new(mut resp: Response) -> Result<Self> {
-        // allocate a buffer large enough for any pkt-line
-        let mut buf = vec![0u8; 1 << 16];
-        let len = read_pkt_line(&mut buf, &mut resp).context("reading first pkt-line")?;
-        let len = len.context("first pkt-line was a flush")?;
+        let mut buf = vec![0u8; 8192]; // Allocate buffer for pkt-line fragments
+
+        let len = read_pkt_line_len(&mut resp)
+            .context("reading first pkt-line")?
+            .context("first pkt-line was a flush")?;
+
+        if len > buf.len() {
+            bail!("overly long first pkt-line, exp. 9 got {}", len);
+        }
+
+        resp.read_exact(&mut buf[..len])?;
 
         let len = if buf[len - 1] == b'\n' { len - 1 } else { len };
         if &buf[..len] != b"packfile" {
@@ -68,6 +65,7 @@ impl PackFileReader {
             buf,
             pos: 0,
             cap: 0,
+            rem: 0,
             src: resp,
         })
     }
@@ -78,14 +76,29 @@ impl BufRead for PackFileReader {
         while self.pos >= self.cap {
             debug_assert!(self.pos == self.cap);
 
-            let len = read_pkt_line(&mut self.buf, &mut self.src)?;
+            if self.rem != 0 {
+                // Read next bytes form current pkt-line
+                let len = std::cmp::min(self.buf.len(), self.rem);
+                self.src.read_exact(&mut self.buf[..len])?;
 
-            let Some(len) = len else {
+                self.pos = 0;
+                self.cap = len;
+                self.rem -= len;
+
+                break;
+            }
+
+            // Start a new pkt-line
+            let line_len = read_pkt_line_len(&mut self.src)?;
+            let Some(line_len) = line_len else {
                 // Flush means EOF, which we signal with empty slice
                 return Ok(&[]);
             };
 
-            if len < 1 {
+            let use_len = std::cmp::min(self.buf.len(), line_len);
+            self.src.read_exact(&mut self.buf[..use_len])?;
+
+            if line_len < 1 {
                 return Err(io_err_invalid("next pkt-line has no stream ID"));
             }
 
@@ -97,7 +110,8 @@ impl BufRead for PackFileReader {
             }
 
             self.pos = 1;
-            self.cap = len;
+            self.cap = use_len;
+            self.rem = line_len - use_len;
         }
 
         Ok(&self.buf[self.pos..self.cap])
