@@ -258,6 +258,7 @@ COMMIT=$("$TARGET" commit-tree "$TREE" -m initial)
     cp -a "$TESTDIR/.git" .
     "$TARGET" checkout-empty "$COMMIT"
 )
+# This is racy: gets false negative when run close to a change of minute
 diff <(ls -lR) <(cd "$OTHERDIR" && ls -lR)
 cleanup
 

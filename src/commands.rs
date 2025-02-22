@@ -6,6 +6,7 @@ use std::fs;
 use std::io;
 use std::io::prelude::*;
 use std::path::Path;
+use std::str;
 use std::time;
 
 use crate::common::git_dir;
@@ -138,8 +139,7 @@ fn tree_from_commit(commit_hash: &str) -> Result<String> {
     let line = commit
         .read_up_to(b'\n')
         .with_context(|| format!("reading from object {commit_hash}"))?;
-    let line =
-        String::from_utf8(line).with_context(|| format!("malformed commit {commit_hash}"))?;
+    let line = str::from_utf8(&line).with_context(|| format!("malformed commit {commit_hash}"))?;
     let Some(("tree", tree_hash)) = line.split_once(' ') else {
         bail!("malformed commit {commit_hash}: no tree in first line");
     };
@@ -147,9 +147,9 @@ fn tree_from_commit(commit_hash: &str) -> Result<String> {
 }
 
 /// The "checkout-empty" (made up) command - a bit like "checkout" except:
-/// - it assumes the working directory is empty, and will overwrite files otherwise;
-/// - TODO: it does not update HEAD;
-/// - in only accepts an unabbreviate commit hash (no branch name etc.).
+/// - assumes the working directory is empty, and will overwrite files otherwise;
+/// - always leaves us with a detached HEAD;
+/// - only accepts an unabbreviate commit hash (no branch name etc.).
 pub fn checkout_empty(commit_hash: &str) -> Result<()> {
     let tree_hash = tree_from_commit(commit_hash)
         .with_context(|| format!("getting tree hash from commit {commit_hash}"))?;
@@ -158,6 +158,9 @@ pub fn checkout_empty(commit_hash: &str) -> Result<()> {
     let root = git_dir()?.parent().expect(".git has a parent");
     tree.actualise_entries(root)
         .with_context(|| format!("checking out to {}", root.display()))?;
+
+    fs::write(git_dir()?.join("HEAD"), commit_hash).context("updating HEAD")?;
+
     Ok(())
 }
 
@@ -190,12 +193,24 @@ fn dir_from_repo_url(url: &str) -> &Path {
 
 /// The "clone" command. Unlike the real one, it unpacks all object to loose storage.
 /// Also, only gets the default branch, not other refs.
-/// TODO: does not check if the destination directory is empty.
 pub fn clone(repo_url: &str, directory: Option<impl AsRef<Path>>) -> Result<()> {
     let directory = match &directory {
         Some(d) => d.as_ref(),
         None => dir_from_repo_url(repo_url),
     };
+    println!("Cloning to {}", directory.display());
+
+    if directory.exists() {
+        if !directory.is_dir() {
+            bail!("destination exists and is not a directory");
+        }
+        let mut entries = directory
+            .read_dir()
+            .context("checking destination is empty")?;
+        if entries.next().is_some() {
+            bail!("destination exists and is not empty");
+        }
+    }
 
     git_init(directory).context("initializing git directory")?;
     env::set_current_dir(directory)
