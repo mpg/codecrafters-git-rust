@@ -118,7 +118,7 @@ impl Entry {
     }
 
     /// Print the entry to stdout in the format used by ls-tree and cat-file -p:
-    /// <mode> <object type> <hash>\t<name>\n
+    /// `<mode> <object type> <hash>\t<name>\n`
     pub fn print(&self) -> Result<()> {
         let mut stdout = io::stdout().lock();
         let mode = self.mode.to_str();

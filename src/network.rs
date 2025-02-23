@@ -1,8 +1,8 @@
 //! The subset of the Git v2 protocol (over HTTP) that is used to minimally clone.
 //!
 //! References:
-//! gitprotocol-common(5) https://git-scm.com/docs/gitprotocol-common
-//! gitprotocol-v2(5) https://git-scm.com/docs/gitprotocol-v2
+//! - gitprotocol-common(5) <https://git-scm.com/docs/gitprotocol-common>
+//! - gitprotocol-v2(5) <https://git-scm.com/docs/gitprotocol-v2>
 //!
 //! Note: compared to the documentation, we skip the discovery phase,
 //! and just assume the server implements the smart HTTP protocol v2.

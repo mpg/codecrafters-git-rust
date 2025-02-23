@@ -1,8 +1,8 @@
 //! Tools for reading packfiles and unpacking them to loose objects.
 //!
 //! Useful documentation:
-//! - gitformat-pack(5) https://git-scm.com/docs/gitformat-pack
-//! - https://codewords.recurse.com/issues/three/unpacking-git-packfiles
+//! - gitformat-pack(5) <https://git-scm.com/docs/gitformat-pack>
+//! - <https://codewords.recurse.com/issues/three/unpacking-git-packfiles>
 
 use anyhow::{bail, Context, Result};
 use flate2::bufread::ZlibDecoder;

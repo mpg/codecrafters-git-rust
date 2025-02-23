@@ -5,6 +5,7 @@ set -eu
 cargo build
 cargo fmt --check
 cargo clippy -- -D warnings
+RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
 
 ROOT="$PWD"
 TARGET="$ROOT/target/debug/codecrafters-git"
