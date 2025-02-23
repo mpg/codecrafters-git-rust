@@ -1,5 +1,8 @@
+//! Object types.
+
 use anyhow::{anyhow, Result};
 
+/// Possible types for a git object.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ObjType {
     Commit,
@@ -9,6 +12,7 @@ pub enum ObjType {
 }
 
 impl ObjType {
+    /// From the byte strings used in the header of loose objects.
     pub fn from_bytes(label: &[u8]) -> Result<ObjType> {
         match label {
             b"commit" => Ok(ObjType::Commit),
@@ -19,6 +23,7 @@ impl ObjType {
         }
     }
 
+    /// To the strings used in the header of loose objects.
     pub fn to_str(&self) -> &'static str {
         match self {
             ObjType::Commit => "commit",
