@@ -1,3 +1,9 @@
+//! Tools for reading packfiles and unpacking them to loose objects.
+//!
+//! Useful documentation:
+//! - gitformat-pack(5) https://git-scm.com/docs/gitformat-pack
+//! - https://codewords.recurse.com/issues/three/unpacking-git-packfiles
+
 use anyhow::{bail, Context, Result};
 use flate2::bufread::ZlibDecoder;
 use sha1::{Digest, Sha1};
@@ -8,17 +14,24 @@ use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
 use crate::obj_write::ObjWriter;
 
+/// This wraps an existing BufRead into a new BufRead
+/// that also hashes the content as it's being read.
+///
+/// This needs to implement BufRead as we want to feed it to a ZlibDecoder, and
+/// only the bufread version supports reading data past the end of a zlib stream.
 struct HashingReader<R> {
     hasher: Sha1,
     reader: R,
 }
 
 impl<R: BufRead> HashingReader<R> {
+    /// Create a hashing reader.
     fn new(reader: R) -> Self {
         let hasher = Sha1::new();
         Self { hasher, reader }
     }
 
+    /// Finish reading from this reader and check the final checksum.
     fn finish(mut self) -> Result<()> {
         let hash = self.hasher.finalize();
         let mut foot = [0u8; 20];
@@ -36,10 +49,14 @@ impl<R: BufRead> HashingReader<R> {
 }
 
 impl<R: BufRead> BufRead for HashingReader<R> {
+    /// Returns the contents of the internal buffer,
+    /// filling it with more data from the inner reader if it is empty.
     fn fill_buf(&mut self) -> io::Result<&[u8]> {
         self.reader.fill_buf()
     }
 
+    /// Tells this buffer that amt bytes have been consumed from the buffer,
+    /// so they should no longer be returned in calls to read.
     fn consume(&mut self, amt: usize) {
         let bytes = self
             .reader
@@ -52,6 +69,8 @@ impl<R: BufRead> BufRead for HashingReader<R> {
 }
 
 impl<R: Read> Read for HashingReader<R> {
+    /// Pull some bytes from this source into the specified buffer,
+    /// returning how many bytes were read.
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.reader.read(buf)?;
         self.hasher.update(&buf[..n]);
@@ -59,11 +78,13 @@ impl<R: Read> Read for HashingReader<R> {
     }
 }
 
+/// Types of deltified objects.
 enum DeltaType {
     OfsDelta,
     RefDelta,
 }
 
+/// Object types in a packfile: either normal type (undeltified) or a deltified type.
 enum PackObjType {
     Basic(ObjType),
     Delta(DeltaType),
@@ -71,6 +92,8 @@ enum PackObjType {
 use PackObjType::*;
 
 impl PackObjType {
+    /// Get pack object type from numeric code
+    /// gitformat-pack(5) "Object types"
     fn from_byte(value: u8) -> Result<Self> {
         match value {
             1 => Ok(Basic(ObjType::Commit)),
@@ -84,6 +107,7 @@ impl PackObjType {
     }
 }
 
+/// Read an undeltified object's data and write the object to loose storage.
 fn unpack_undeltified(reader: &mut impl BufRead, obj_type: ObjType, size: usize) -> Result<()> {
     let mut zdec = ZlibDecoder::new(reader);
     let mut object = ObjWriter::new(obj_type, size, true).context("creating object")?;
@@ -94,14 +118,20 @@ fn unpack_undeltified(reader: &mut impl BufRead, obj_type: ObjType, size: usize)
     Ok(())
 }
 
+/// Read a byte from the given reader (convenience function).
 fn read_byte(reader: &mut impl Read) -> Result<u8> {
     let mut buf = [0u8];
     reader.read_exact(&mut buf)?;
     Ok(buf[0])
 }
 
-// gitformat-pack(5) "Size encoding",
-// optionally keeping type_bits from the first byte to encode a type ID.
+/// Read a size (and optionally type) in the variable-length format used in packfiles.
+///
+/// See gitformat-pack(5) "Size encoding", but also "undeltified representation"
+/// says 3 bits are reserved for the type when encoding an object's size.
+///
+/// Pass type_bits = 3 when reading an size in an undeltified entry.
+/// Pass type_bits = 0 otherwise.
 fn read_size_and_opt_type(reader: &mut impl Read, type_bits: u8) -> Result<(u8, usize)> {
     let mut byte = read_byte(reader).context("reading first byte")?;
 
@@ -122,7 +152,8 @@ fn read_size_and_opt_type(reader: &mut impl Read, type_bits: u8) -> Result<(u8, 
     Ok((type_id, size))
 }
 
-// gitformat-pack(5) "Instruction to copy from base object" - offset
+/// Read the offset component of a copy instruction.
+/// See gitformat-pack(5) "Instruction to copy from base object".
 fn read_copy_offset(reader: &mut impl Read, bitmap: u8) -> Result<u64> {
     let mut offset = 0;
     for b in 0..4 {
@@ -134,7 +165,8 @@ fn read_copy_offset(reader: &mut impl Read, bitmap: u8) -> Result<u64> {
     Ok(offset)
 }
 
-// gitformat-pack(5) "Instruction to copy from base object" - size
+/// Read the size component of a copy instruction.
+/// See gitformat-pack(5) "Instruction to copy from base object".
 fn read_copy_size(reader: &mut impl Read, bitmap: u8) -> Result<u64> {
     let mut size = 0;
     for b in 0..3 {
@@ -146,6 +178,12 @@ fn read_copy_size(reader: &mut impl Read, bitmap: u8) -> Result<u64> {
     Ok(size)
 }
 
+/// Read a deltified object's instructions and write it out as a loose object.
+///
+/// This involves reconstructing the object from a base object and a series
+/// of instructions to either add new data or copy from the base object.
+///
+/// See gitformat-pack(5) "Deltified representation".
 fn unpack_ref_delta(reader: &mut impl BufRead, instr_size: usize) -> Result<()> {
     let mut hash = [0u8; 20];
     reader
@@ -196,7 +234,8 @@ fn unpack_ref_delta(reader: &mut impl BufRead, instr_size: usize) -> Result<()> 
     Ok(())
 }
 
-// gitformat-pack(5) "object entries, each of which looks like this"
+/// Read an object entry and write it out as a loose object.
+/// See gitformat-pack(5) "object entries, each of which looks like this"
 fn unpack_object(reader: &mut impl BufRead) -> Result<()> {
     // n-byte type and length (3-bit type, (n-1)*7+4-bit length)
     let (type_id, size) = read_size_and_opt_type(reader, 3).context("reading type and size")?;
@@ -210,7 +249,10 @@ fn unpack_object(reader: &mut impl BufRead) -> Result<()> {
     }
 }
 
-// gitformat-pack(5) "pack-*.pack files have the following format"
+/// Read a packfile, write all its objects to loose storage,
+/// and return the number of objects written.
+///
+/// See gitformat-pack(5) "pack-*.pack files have the following format"
 pub fn unpack_from<R: BufRead>(reader: R) -> Result<u32> {
     let mut reader = HashingReader::new(reader);
 
