@@ -1,3 +1,5 @@
+//! Entries in tree objects
+
 use anyhow::{bail, Context, Result};
 use std::ffi::OsStr;
 use std::fs;
@@ -12,6 +14,7 @@ use crate::obj_read::ObjReader;
 use crate::obj_type::ObjType;
 use crate::tree_read::TreeReader;
 
+/// Possible modes (types) for tree entries
 pub enum Mode {
     Dir,
     File,
@@ -21,7 +24,11 @@ pub enum Mode {
 }
 
 impl Mode {
+    /// Get mode from the byte strings used in tree objects.
     fn from_bytes(mode: &[u8]) -> Result<Self> {
+        // Amazingly, the best reference I could find was git-fast-import(1).
+        // gitattibutes(1) also has a list, but without descriptions.
+        // Note that leading zeroes are omitted (for directories).
         match mode {
             b"40000" => Ok(Mode::Dir),
             b"100644" => Ok(Mode::File),
@@ -32,6 +39,7 @@ impl Mode {
         }
     }
 
+    /// Determine mode based on filesystem metadata.
     pub fn from_metadata(meta: &fs::Metadata) -> Result<Self> {
         if meta.is_file() {
             if meta.permissions().mode() & 0o111 != 0 {
@@ -48,6 +56,7 @@ impl Mode {
         }
     }
 
+    /// Give the string to be used in tree objects.
     pub fn to_str(&self) -> &'static str {
         match self {
             Mode::Dir => "40000",
@@ -58,6 +67,7 @@ impl Mode {
         }
     }
 
+    /// Get the object type associated to this mode.
     fn obj_type(&self) -> ObjType {
         match self {
             Mode::Dir => ObjType::Tree,
@@ -69,13 +79,15 @@ impl Mode {
     }
 }
 
+/// An entry in a tree.
 pub struct Entry {
-    mode: Mode,
-    name: Vec<u8>,
-    hash: [u8; 20],
+    pub mode: Mode,
+    pub name: Vec<u8>,
+    pub hash: [u8; 20],
 }
 
 impl Entry {
+    /// Parse entry from a tree object's content.
     pub fn parse(object: &mut ObjReader) -> Result<Self> {
         // <mode> <name>\0<20_byte_sha>
         let mode = object.read_up_to(b' ').context("reading mode")?;
@@ -87,6 +99,17 @@ impl Entry {
         Ok(Entry { mode, name, hash })
     }
 
+    /// Write entry as it will be in the tree object.
+    pub fn push_to_vec(&self, out: &mut Vec<u8>) {
+        // <mode> <name>\0<20_byte_sha>
+        out.extend_from_slice(self.mode.to_str().as_bytes());
+        out.push(b' ');
+        out.extend_from_slice(&self.name);
+        out.push(b'\0');
+        out.extend_from_slice(&self.hash);
+    }
+
+    /// Print the name of the entry to stdout.
     pub fn print_name(&self) -> Result<()> {
         let mut stdout = io::stdout().lock();
         stdout.write_all(&self.name)?;
@@ -94,6 +117,8 @@ impl Entry {
         Ok(())
     }
 
+    /// Print the entry to stdout in the format used by ls-tree and cat-file -p:
+    /// <mode> <object type> <hash>\t<name>\n
     pub fn print(&self) -> Result<()> {
         let mut stdout = io::stdout().lock();
         let mode = self.mode.to_str();
@@ -106,6 +131,7 @@ impl Entry {
         Ok(())
     }
 
+    /// Create an actual file/dir/link in the filesystem from this entry.
     pub fn actualise(&self, base_path: &Path) -> Result<()> {
         let hash = hex::encode(self.hash);
         let mut object =
@@ -155,15 +181,4 @@ impl Entry {
 
         Ok(())
     }
-}
-
-pub fn push_tree_entry(out: &mut Vec<u8>, mode: Mode, name: &[u8], hash: &str) {
-    let hash = hex::decode(hash).expect("hash is valid hex");
-
-    // <mode> <name>\0<20_byte_sha>
-    out.extend_from_slice(mode.to_str().as_bytes());
-    out.push(b' ');
-    out.extend_from_slice(name);
-    out.push(b'\0');
-    out.extend_from_slice(&hash);
 }

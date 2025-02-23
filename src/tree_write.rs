@@ -1,3 +1,5 @@
+//! Writing tree objects
+
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::io;
@@ -7,8 +9,9 @@ use std::path::Path;
 use crate::common::git_dir;
 use crate::obj_type::ObjType;
 use crate::obj_write::write_object;
-use crate::tree_entry::{push_tree_entry, Mode};
+use crate::tree_entry::{Entry, Mode};
 
+/// Hash and write to object storage the given entry.
 fn hash_entry(path: &Path, meta: &fs::Metadata) -> Result<String> {
     if meta.is_dir() {
         tree_from_dir(path).context("hashing subtree")
@@ -27,8 +30,13 @@ fn hash_entry(path: &Path, meta: &fs::Metadata) -> Result<String> {
     }
 }
 
+/// The hash of the empty tree, used to detect and skip them.
+///
+/// This is more convenient than checking using read_dir as we need to
+/// ignore .git and recursively ignore "empty" directories.
 const EMPTY_TREE_HASH: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
+/// Get entries for the given directory, sorted how git wants them.
 fn sorted_entries(dir: &Path) -> Result<Vec<(fs::DirEntry, fs::Metadata)>> {
     let mut entries = Vec::new();
     let iter =
@@ -59,6 +67,7 @@ fn sorted_entries(dir: &Path) -> Result<Vec<(fs::DirEntry, fs::Metadata)>> {
     Ok(entries)
 }
 
+/// Create a tree object for the given directory and return its hash.
 fn tree_from_dir(dir: &Path) -> Result<String> {
     // We'll need everything in memory so we know the size before writing the object.
     let mut out = Vec::new();
@@ -75,15 +84,18 @@ fn tree_from_dir(dir: &Path) -> Result<String> {
         if hash == EMPTY_TREE_HASH {
             continue;
         }
+        let hash = hex::decode(hash).expect("hash is valid hex");
+        let hash: [u8; 20] = hash.try_into().expect("hash is 20 bytes");
 
         let mode = Mode::from_metadata(&meta)?;
 
-        push_tree_entry(&mut out, mode, &name, &hash);
+        Entry { mode, name, hash }.push_to_vec(&mut out);
     }
 
     write_object(ObjType::Tree, &mut io::Cursor::new(out), true)
 }
 
+/// Create a tree object for the git working directory and return its hash.
 pub fn tree_from_workdir() -> Result<String> {
     let root = git_dir()?.parent().expect(".git has a parent");
     tree_from_dir(root)
