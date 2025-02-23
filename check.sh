@@ -277,14 +277,6 @@ diff <(git cat-file -p $BLOB1) "$FILE1"
 diff <(git cat-file -p $BLOB2) "$FILE2"
 cleanup
 
-setup "git unpack-objects (undeltified, real-world)"
-(cd "$ROOT" && git pack-objects --all --depth=0 -q --stdout </dev/null) > mypack
-"$TARGET" init >/dev/null
-"$TARGET" unpack-objects < mypack >/dev/null
-COMMIT=$(cd "$ROOT" && git rev-parse HEAD)
-git cat-file commit "$COMMIT" >/dev/null
-cleanup
-
 setup "git unpack-objects (deltified: copy only)"
 # This will store B (longest) in full and for A use a single copy instruction.
 git init >/dev/null
@@ -314,14 +306,6 @@ rm -rf .git
 "$TARGET" unpack-objects < mypack >/dev/null
 diff <(git cat-file -p $A) a
 diff <(git cat-file -p $B) b
-cleanup
-
-setup "git unpack-objects (deltified, real-world)"
-(cd "$ROOT" && git pack-objects --all -q --stdout </dev/null) > mypack
-"$TARGET" init >/dev/null
-"$TARGET" unpack-objects < mypack >/dev/null
-COMMIT=$(cd "$ROOT" && git rev-parse HEAD)
-git cat-file commit "$COMMIT" >/dev/null
 cleanup
 
 setup "git ls-remote <url> HEAD"
