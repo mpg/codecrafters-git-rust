@@ -1,6 +1,6 @@
 # A toy implementation of a small subset of git in Rust
 
-This is my Rust solution to the codecrafters git challenge.
+This is my Rust solution to the [codecrafters git challenge](https://codecrafters.io/challenges/git).
 
 It's mostly just the minimum needed to pass the tests, but I slightly extended
 the scope when I thought it would teach me something more about Rust.
@@ -24,8 +24,8 @@ _Other educative implementations of subsets of git:_
 - [My solution](https://github.com/mpg/codecrafters-git-python) to the same challenge in Python (and less clean).
 - Jon Gjengset's solution to this challenge (except the clone stage) in Rust:
   [final code](https://github.com/jonhoo/codecrafters-git-rust) and
-  [livestream replay](https://www.youtube.com/watch?v=u0VotuGzD_w) (super
-  informative.
+  [livestream replay](https://www.youtube.com/watch?v=u0VotuGzD_w) - super
+  informative!
 - A Haskell implementation of git clone
   [explained](https://stefan.saasen.me/articles/git-clone-in-haskell-from-the-bottom-up/)
   which provided the strategy I used for clone.
@@ -36,7 +36,7 @@ _Other educative implementations of subsets of git:_
 
 
 ***
-(Original codecrafter Readme below.)
+(Original codecrafters Readme below.)
 ***
 
 
